@@ -10,17 +10,20 @@ sample_fidelities = 0.50:0.05:0.95
 
 @info("Using $(n_threads) threads.")
 
+n_nodes = 10
+qubits_per_node = 10
+
 for F in sample_fidelities
-    sizes = zeros(Int,5) .+ 10 # Number of qubits in each register
-    T2 = 100.0                 # T2 dephasing time of all qubits
-    # F = 0.85                 # Fidelity of the raw Bell pairs
-    entangler_wait_time = 0.1  # How long to wait if all qubits are busy before retrying entangling
-    entangler_busy_time = 1.0  # How long it takes to establish a newly entangled pair
-    swapper_wait_time = 0.1    # How long to wait if all qubits are unavailable for swapping
-    swapper_busy_time = 0.15   # How long it takes to swap two qubits
-    purifier_wait_time = 0.15  # How long to wait if there are no pairs to be purified
-    purifier_busy_time = 0.2   # How long the purification circuit takes to execute 
-    n_sample_files = 350       # How many files to save for each F value (should be <= n_threads)
+    sizes = zeros(Int, n_nodes) .+ qubits_per_node  # Number of qubits in each register
+    T2 = 100.0                                      # T2 dephasing time of all qubits
+    # F = 0.85                                      # Fidelity of the raw Bell pairs
+    entangler_wait_time = 0.1                       # How long to wait if all qubits are busy before retrying entangling
+    entangler_busy_time = 1.0                       # How long it takes to establish a newly entangled pair
+    swapper_wait_time = 0.1                         # How long to wait if all qubits are unavailable for swapping
+    swapper_busy_time = 0.15                        # How long it takes to swap two qubits
+    purifier_wait_time = 0.15                       # How long to wait if there are no pairs to be purified
+    purifier_busy_time = 0.2                        # How long the purification circuit takes to execute 
+    n_sample_files = 350                            # How many files to save for each F value (should be <= n_threads)
 
     base_dir = "saved_data"
     if !isdir(base_dir)
