@@ -1,0 +1,5 @@
+
+# pixi environments
+.pixi
+*.egg-info
+/saved_data
