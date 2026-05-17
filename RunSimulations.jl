@@ -93,7 +93,15 @@ for F in sample_fidelities
             consumer_prot = EntanglementConsumer(sim, network, 1, length(registers))
             @process consumer_prot()
 
-            run(sim, 1000.0)
+            while true
+                try
+                    run(sim, 1000.0)
+                    break
+                catch
+                    println("Simulation failed! Trying again.")
+                    sleep(0.1)
+                end
+            end
 
             savefile = base_dir * "sample_$(sample_id).h5"
             metadata = Dict(
