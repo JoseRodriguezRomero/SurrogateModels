@@ -169,23 +169,23 @@ function plot_data_model_2d(obs1_vecs::Dict{Int, Any},
     return plt
 end
 
-function plot_data_model_2d(obs1_vecs::Dict{Int, Any}, 
-    obs2_vecs::Dict{Int, Any}, t_vecs::Dict{Int, Any})
+# function plot_data_model_2d(obs1_vecs::Dict{Int, Any}, 
+#     obs2_vecs::Dict{Int, Any}, t_vecs::Dict{Int, Any})
 
-    obs1_vec = zeros(Float64,0)
-    obs2_vec = zeros(Float64,0)
-    t_diff_vec = zeros(Float64,0)
-    for thread_id in keys(obs1_vecs)
-        obs1_vec = vcat(obs1_vec, obs1_vecs[thread_id][1:(end-1)])
-        obs2_vec = vcat(obs2_vec, obs2_vecs[thread_id][1:(end-1)])
-        t_diff_vec = vcat(t_diff_vec, diff(t_vecs[thread_id]))
-    end
+#     obs1_vec = zeros(Float64,0)
+#     obs2_vec = zeros(Float64,0)
+#     t_diff_vec = zeros(Float64,0)
+#     for thread_id in keys(obs1_vecs)
+#         obs1_vec = vcat(obs1_vec, obs1_vecs[thread_id][1:(end-1)])
+#         obs2_vec = vcat(obs2_vec, obs2_vecs[thread_id][1:(end-1)])
+#         t_diff_vec = vcat(t_diff_vec, diff(t_vecs[thread_id]))
+#     end
 
-    function sampler(K)
+#     function sampler(K)
         
-    end
+#     end
 
-end
+# end
 
 function load_data(save_dir::String)
     obs1_vecs = Dict{Int, Any}()
