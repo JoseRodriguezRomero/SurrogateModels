@@ -78,43 +78,39 @@ function load_entanglement_consumer_log(save_file::FileIO.File{FileIO.DataFormat
         return enum_dict[attr]
     end
 
-    try 
-        h5open(save_file.filename, "r") do file
-            qnet_group = open_group(file, "qnet")
-            metadata_group = open_group(qnet_group, "metadata")
-            simulation_log_group = open_group(qnet_group, "simulation_log")
-            quantumsavory_group = open_group(metadata_group, "quantumsavory")
+    h5open(save_file.filename, "r") do file
+        qnet_group = open_group(file, "qnet")
+        metadata_group = open_group(qnet_group, "metadata")
+        simulation_log_group = open_group(qnet_group, "simulation_log")
+        quantumsavory_group = open_group(metadata_group, "quantumsavory")
 
-            format_version = read_attribute(qnet_group, "format_version")
-            format_version_minor = read_attribute(qnet_group, "format_version_minor")
-            log_format = read_attribute_enum(qnet_group, "log_format")
-            reference_state = read_attribute_enum(qnet_group, "reference_state")
+        format_version = read_attribute(qnet_group, "format_version")
+        format_version_minor = read_attribute(qnet_group, "format_version_minor")
+        log_format = read_attribute_enum(qnet_group, "log_format")
+        reference_state = read_attribute_enum(qnet_group, "reference_state")
 
-            simulation_time = read_dataset(simulation_log_group, "time")
-            simulation_state = read_dataset(simulation_log_group, "state")
-            simulation_log = EntanglementConsumerLogSimulationLog(time = simulation_time, state = simulation_state)
+        simulation_time = read_dataset(simulation_log_group, "time")
+        simulation_state = read_dataset(simulation_log_group, "state")
+        simulation_log = EntanglementConsumerLogSimulationLog(time = simulation_time, state = simulation_state)
 
-            metadata_description = read_attribute(metadata_group, "description")
-            metadata_simulator = read_attribute(metadata_group, "simulator")
+        metadata_description = read_attribute(metadata_group, "description")
+        metadata_simulator = read_attribute(metadata_group, "simulator")
 
-            quantumsavory_metadata = Dict{String,Any}()
-            for attr in keys(attributes(quantumsavory_group))
-                quantumsavory_metadata[attr] = read_attribute(quantumsavory_group, attr)
-            end
-
-            metadata = EntanglementConsumerLogMetadata(description = metadata_description, simulator = metadata_simulator, quantumsavory_metadata = quantumsavory_metadata)
-
-            consumer_log = EntanglementConsumerLog(
-                format_version = format_version,
-                format_version_minor = format_version_minor,
-                log_format = log_format,
-                reference_state = reference_state,
-                simulation_log = simulation_log,
-                metadata = metadata
-            )
+        quantumsavory_metadata = Dict{String,Any}()
+        for attr in keys(attributes(quantumsavory_group))
+            quantumsavory_metadata[attr] = read_attribute(quantumsavory_group, attr)
         end
-    catch e
-        throw(e)
+
+        metadata = EntanglementConsumerLogMetadata(description = metadata_description, simulator = metadata_simulator, quantumsavory_metadata = quantumsavory_metadata)
+
+        consumer_log = EntanglementConsumerLog(
+            format_version = format_version,
+            format_version_minor = format_version_minor,
+            log_format = log_format,
+            reference_state = reference_state,
+            simulation_log = simulation_log,
+            metadata = metadata
+        )
     end
 
     return consumer_log
