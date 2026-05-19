@@ -194,11 +194,15 @@ function load_data(save_dir::String)
 
     file_names = filter(x -> endswith(x, ".h5"), readdir(save_dir, join=true))
     for sample_id in eachindex(file_names)
-        consumer_log = load_entanglement_consumer_log(file_names[sample_id])
+        try
+            consumer_log = load_entanglement_consumer_log(file_names[sample_id])
 
-        t_vecs[sample_id] = consumer_log.t
-        obs1_vecs[sample_id] = consumer_log.obs1
-        obs2_vecs[sample_id] = consumer_log.obs2
+            t_vecs[sample_id] = consumer_log.simulation_log.time
+            obs1_vecs[sample_id] = consumer_log.simulation_log.state[2,:]
+            obs2_vecs[sample_id] = consumer_log.simulation_log.state[1,:]
+        catch
+            display("File failied: $(file_names[sample_id])")
+        end
     end
 
     return obs1_vecs, obs2_vecs, t_vecs
