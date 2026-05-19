@@ -198,8 +198,8 @@ function load_data(save_dir::String)
             consumer_log = load_entanglement_consumer_log(file_names[sample_id])
 
             t_vecs[sample_id] = consumer_log.simulation_log.time
-            obs1_vecs[sample_id] = consumer_log.simulation_log.state[2,:]
-            obs2_vecs[sample_id] = consumer_log.simulation_log.state[1,:]
+            obs1_vecs[sample_id] = consumer_log.simulation_log.state[1,:]
+            obs2_vecs[sample_id] = consumer_log.simulation_log.state[2,:]
         catch
             display("File failied: $(file_names[sample_id])")
         end
