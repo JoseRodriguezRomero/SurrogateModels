@@ -12,7 +12,7 @@ using QuantumSavory
 using QuantumSavory.ProtocolZoo
 
 # For saving the log of the simulation
-using HDF5, FileIO, CSV, DataFrames
+using HDF5, FileIO, CSV
 
 # Predefined useful circuits
 using QuantumSavory.CircuitZoo: EntanglementSwap, Purify2to1

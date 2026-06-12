@@ -117,7 +117,7 @@ function load_entanglement_consumer_log(save_file::FileIO.File{FileIO.DataFormat
 end
 
 function load_entanglement_consumer_log(file_name::String)
-    return load_entanglement_consumer_log(query(file_name))
+    return load_entanglement_consumer_log(FileIO.query(file_name))
 end
 
 function test_open_log(test_file_name::String = "saved_data/F_0.5/sample_1.h5")
@@ -127,3 +127,4 @@ function test_open_log(test_file_name::String = "saved_data/F_0.5/sample_1.h5")
         @error "No saved data to load! Run some simulations."
     end
 end
+

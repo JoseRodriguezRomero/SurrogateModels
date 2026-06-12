@@ -92,20 +92,10 @@ for F in sample_fidelities
 
             consumer_prot = EntanglementConsumer(sim, network, 1, length(registers))
             @process consumer_prot()
-
-            while true
-                try
-                    run(sim, 1000.0)
-                    break
-                catch
-                    println("Simulation failed! Trying again.")
-                    sleep(0.1)
-                end
-            end
+            run(sim, 1000.0)
 
             savefile = base_dir * "sample_$(sample_id).h5"
             metadata = Dict(
-                # Optional metadata
                 "sizes" => sizes,
                 "T2" => T2,
                 "F" => F,
@@ -115,14 +105,13 @@ for F in sample_fidelities
                 "swapper_busy_time" => swapper_busy_time,
                 "purifier_wait_time" => purifier_wait_time,
                 "purifier_busy_time" => purifier_busy_time,
-                
-                # Mandatory metadata
                 "description" => "Simulation of a quantum network with $(nv(network)) nodes and $(ne(network)) edges, using the specified parameters.",
                 "simulator" => "QuantumSavory.jl",
                 "reference_state" => "bell_pair",
                 "log_format" => "pauli_observables"
             )
-            save(savefile, consumer_prot; metadata)
+
+            save(savefile, consumer_prot; metadata = metadata)
         end
     end
 

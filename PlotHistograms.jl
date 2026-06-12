@@ -1,25 +1,26 @@
 import Plots, Distributions
 import KernelDensity, StatsBase
 import KernelDensity: kernel_dist
-import NeuralEstimators
 
 using Base.Threads
 using Measures, DataInterpolations
 using LaTeXStrings, Interpolations
 
-include("LoadLogFiles.jl")
+include("load_log_files.jl")
 
-function plot_data_1d(obs1_vecs::Dict{Int, Any}, 
-    obs2_vecs::Dict{Int, Any}, t_vecs::Dict{Int, Any})
-
+function plot_data_1d(obs1_vecs::Dict{Int, Any}, obs2_vecs::Dict{Int, Any}, t_vecs::Dict{Int, Any})
     obs1_vec = zeros(Float64,0)
     obs2_vec = zeros(Float64,0)
     t_diff_vec = zeros(Float64,0)
-    for thread_id in keys(obs1_vecs)
-        obs1_vec = vcat(obs1_vec, obs1_vecs[thread_id][1:(end-1)])
-        obs2_vec = vcat(obs2_vec, obs2_vecs[thread_id][1:(end-1)])
-        t_diff_vec = vcat(t_diff_vec, diff(t_vecs[thread_id]))
+    for file_id in keys(obs1_vecs)
+        obs1_vec = vcat(obs1_vec, obs1_vecs[file_id][1:(end-1)])
+        obs2_vec = vcat(obs2_vec, obs2_vecs[file_id][1:(end-1)])
+        t_diff_vec = vcat(t_diff_vec, diff(t_vecs[file_id]))
     end
+
+    # obs1_vec = vcat(obs1_vec, -obs1_vec)
+    # obs2_vec = vcat(obs2_vec, -obs2_vec)
+    # t_diff_vec = vcat(t_diff_vec, -t_diff_vec)
 
     p1 = Plots.histogram(obs2_vec, normalize=:pdf, bins=100,
         label="QSavory Data")
@@ -32,12 +33,10 @@ function plot_data_1d(obs1_vecs::Dict{Int, Any},
     plt_y = kde_pdf_1.(plt_x)
     Plots.plot!(plt_x, plt_y, lw = 2, label = "Kernel Density Estimation")
     
-    Plots.plot!(xlabel = "(O₁) Fidelity of consumed pairs", 
-        ylabel = "p₁(O₁)")
+    Plots.plot!(xlabel = "(O₁) Fidelity of consumed pairs", ylabel = "p₁(O₁)")
     Plots.plot!(frame = :box)
 
-    p2 = Plots.histogram(t_diff_vec, normalize=:pdf, bins=100,
-        label="QSavory Data")
+    p2 = Plots.histogram(t_diff_vec, normalize=:pdf, bins=100, label="QSavory Data")
     kde2 = KernelDensity.kde(t_diff_vec)
     kde2 = KernelDensity.InterpKDE(kde2)
     kde_pdf_2(x) = Distributions.pdf(kde2,x)
@@ -47,23 +46,21 @@ function plot_data_1d(obs1_vecs::Dict{Int, Any},
     plt_y = kde_pdf_2.(plt_x)
     Plots.plot!(plt_x, plt_y, lw = 2, label = "Kernel Density Estimation")
 
-    Plots.plot!(xlabel = "(Δt) Time between consumptions [s]", 
-        ylabel = "pₜ(Δt)")
+    Plots.plot!(xlabel = "(Δt) Time between consumptions [s]", ylabel = "pₜ(Δt)")
     Plots.plot!(frame = :box)
 
     return Plots.plot(p1, p2, layout = (2,1), 
         size=(800,400), left_margin = 3mm, bottom_margin = 4mm)
 end
 
-function plot_corr_2d(obs1_vecs::Dict{Int, Any}, 
-    obs2_vecs::Dict{Int, Any}, t_vecs::Dict{Int, Any})
+function plot_corr_2d(obs1_vecs::Dict{Int, Any}, obs2_vecs::Dict{Int, Any}, t_vecs::Dict{Int, Any})
     obs1_vec = zeros(Float64,0)
     obs2_vec = zeros(Float64,0)
     t_diff_vec = zeros(Float64,0)
-    for thread_id in keys(obs1_vecs)
-        obs1_vec = vcat(obs1_vec, obs1_vecs[thread_id][1:(end-1)])
-        obs2_vec = vcat(obs2_vec, obs2_vecs[thread_id][1:(end-1)])
-        t_diff_vec = vcat(t_diff_vec, diff(t_vecs[thread_id]))
+    for file_id in keys(obs1_vecs)
+        obs1_vec = vcat(obs1_vec, obs1_vecs[file_id][1:(end-1)])
+        obs2_vec = vcat(obs2_vec, obs2_vecs[file_id][1:(end-1)])
+        t_diff_vec = vcat(t_diff_vec, diff(t_vecs[file_id]))
     end
 
     kde1 = KernelDensity.kde(obs2_vec)
@@ -79,8 +76,7 @@ function plot_corr_2d(obs1_vecs::Dict{Int, Any},
     itp12(x,y) = Distributions.pdf(kde12,x,y)
 
     sample_inds = 1:length(obs2_vec)
-    sample_inds = StatsBase.sample(sample_inds, 
-        min(400, length(sample_inds)), replace=false)
+    sample_inds = StatsBase.sample(sample_inds, min(400, length(sample_inds)), replace=false)
     obs2_vec = obs2_vec[sample_inds]
     t_diff_vec = t_diff_vec[sample_inds]
 
@@ -99,16 +95,14 @@ function plot_corr_2d(obs1_vecs::Dict{Int, Any},
     return plt
 end
 
-function plot_data_2d(obs1_vecs::Dict{Int, Any}, 
-    obs2_vecs::Dict{Int, Any}, t_vecs::Dict{Int, Any})
-
+function plot_data_2d(obs1_vecs::Dict{Int, Any}, obs2_vecs::Dict{Int, Any}, t_vecs::Dict{Int, Any})
     obs1_vec = zeros(Float64,0)
     obs2_vec = zeros(Float64,0)
     t_diff_vec = zeros(Float64,0)
-    for thread_id in keys(obs1_vecs)
-        obs1_vec = vcat(obs1_vec, obs1_vecs[thread_id][1:(end-1)])
-        obs2_vec = vcat(obs2_vec, obs2_vecs[thread_id][1:(end-1)])
-        t_diff_vec = vcat(t_diff_vec, diff(t_vecs[thread_id]))
+    for file_id in keys(obs1_vecs)
+        obs1_vec = vcat(obs1_vec, obs1_vecs[file_id][1:(end-1)])
+        obs2_vec = vcat(obs2_vec, obs2_vecs[file_id][1:(end-1)])
+        t_diff_vec = vcat(t_diff_vec, diff(t_vecs[file_id]))
     end
 
     kde = KernelDensity.kde((obs2_vec, t_diff_vec))
@@ -132,16 +126,14 @@ function plot_data_2d(obs1_vecs::Dict{Int, Any},
     return plt
 end
 
-function plot_data_model_2d(obs1_vecs::Dict{Int, Any}, 
-    obs2_vecs::Dict{Int, Any}, t_vecs::Dict{Int, Any})
-
+function plot_data_model_2d(obs1_vecs::Dict{Int, Any}, obs2_vecs::Dict{Int, Any}, t_vecs::Dict{Int, Any})
     obs1_vec = zeros(Float64,0)
     obs2_vec = zeros(Float64,0)
     t_diff_vec = zeros(Float64,0)
-    for thread_id in keys(obs1_vecs)
-        obs1_vec = vcat(obs1_vec, obs1_vecs[thread_id][1:(end-1)])
-        obs2_vec = vcat(obs2_vec, obs2_vecs[thread_id][1:(end-1)])
-        t_diff_vec = vcat(t_diff_vec, diff(t_vecs[thread_id]))
+    for file_id in keys(obs1_vecs)
+        obs1_vec = vcat(obs1_vec, obs1_vecs[file_id][1:(end-1)])
+        obs2_vec = vcat(obs2_vec, obs2_vecs[file_id][1:(end-1)])
+        t_diff_vec = vcat(t_diff_vec, diff(t_vecs[file_id]))
     end
 
     kde1 = KernelDensity.kde(obs2_vec)
@@ -169,23 +161,18 @@ function plot_data_model_2d(obs1_vecs::Dict{Int, Any},
     return plt
 end
 
-# function plot_data_model_2d(obs1_vecs::Dict{Int, Any}, 
-#     obs2_vecs::Dict{Int, Any}, t_vecs::Dict{Int, Any})
+function vae_model(obs1_vecs::Dict{Int, Any}, obs2_vecs::Dict{Int, Any}, t_vecs::Dict{Int, Any})
+    obs1_vec = zeros(Float64,0)
+    obs2_vec = zeros(Float64,0)
+    t_diff_vec = zeros(Float64,0)
+    for file_id in keys(obs1_vecs)
+        obs1_vec = vcat(obs1_vec, obs1_vecs[file_id][1:(end-1)])
+        obs2_vec = vcat(obs2_vec, obs2_vecs[file_id][1:(end-1)])
+        t_diff_vec = vcat(t_diff_vec, diff(t_vecs[file_id]))
+    end
 
-#     obs1_vec = zeros(Float64,0)
-#     obs2_vec = zeros(Float64,0)
-#     t_diff_vec = zeros(Float64,0)
-#     for thread_id in keys(obs1_vecs)
-#         obs1_vec = vcat(obs1_vec, obs1_vecs[thread_id][1:(end-1)])
-#         obs2_vec = vcat(obs2_vec, obs2_vecs[thread_id][1:(end-1)])
-#         t_diff_vec = vcat(t_diff_vec, diff(t_vecs[thread_id]))
-#     end
-
-#     function sampler(K)
-        
-#     end
-
-# end
+    
+end
 
 function load_data(save_dir::String)
     obs1_vecs = Dict{Int, Any}()
@@ -201,7 +188,7 @@ function load_data(save_dir::String)
             obs1_vecs[sample_id] = consumer_log.simulation_log.state[1,:]
             obs2_vecs[sample_id] = consumer_log.simulation_log.state[2,:]
         catch
-            display("File failied: $(file_names[sample_id])")
+            display("File failed: $(file_names[sample_id])")
         end
     end
 
@@ -216,8 +203,7 @@ function plot_data(save_dir::String)
 
     plot1 = plot_data_2d(obs1_vecs, obs2_vecs, t_vecs)
     plot2 = plot_data_model_2d(obs1_vecs, obs2_vecs, t_vecs)
-    plot = Plots.plot(plot1,plot2,layout=(1,2),size=(900,300),
-        left_margin = 4mm, bottom_margin = 4mm, top_margin=8mm)
+    plot = Plots.plot(plot1, plot2, layout=(1,2), size=(900,300), left_margin = 4mm, bottom_margin = 4mm, top_margin = 8mm)
     Plots.savefig(plot, save_dir * "histograms_bivariate.pdf")
     Plots.savefig(plot, save_dir * "histograms_bivariate.svg")
 
