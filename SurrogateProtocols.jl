@@ -1,6 +1,7 @@
 module SurrogateProtocols
 
 using Flux
+using Random
 using Distributions
 using DocStringExtensions
 using QuantumSavory
@@ -54,6 +55,22 @@ $FIELDS
     _log::Vector{Tuple} = Vector{Tuple}[]
 end
 
+function load_training_data(training_data_directory::String)
+    file_names = filter(x -> endswith(x, ".h5"), readdir(training_data_directory, join=true))
+    training_data = Vector{Matrix{Float64}}(undef, length(file_names))
+
+    for sample_id in eachindex(file_names)
+        try
+            consumer_log = load_entanglement_consumer_log(file_names[sample_id])
+            training_data[sample_id] = hcat(consumer_log.simulation_log.time, consumer_log.simulation_log.state')
+        catch e
+            throw(e)
+        end
+    end
+
+    return training_data
+end
+
 function SurrogateProtocolVAE(simulation::Simulation, training_data_directory::String; simulation_window_size::Int = 1, latent_dim::Int = 2, kwargs...)
     raw_training_data = load_training_data(training_data_directory)
     reshaped_training_data = Vector{Matrix{Float64}}(undef, length(raw_training_data))
@@ -72,22 +89,23 @@ function SurrogateProtocolVAE(simulation::Simulation, training_data_directory::S
     end
 
     reshaped_training_data = collect(transpose(reduce(vcat,reshaped_training_data)))
+    reshaped_training_data = Float64.(reshaped_training_data)
     encoder_input_size = size(reshaped_training_data)[1]
     encoder_chain = Chain(
-        Dense(encoder_input_size, 64, relu), 
-        Dense(64, 64, relu), 
+        Dense(encoder_input_size, 64, gelu), 
+        Dense(64, 64, gelu), 
         Parallel(vcat, 
             Dense(64 => latent_dim), 
             Dense(64 => latent_dim)
     )
-    ) |> f64
+    ) |> f32
     decoder_chain = Chain(
-        Dense(latent_dim, 64, relu), 
-        Dense(64, 64, relu), 
+        Dense(latent_dim, 64, gelu), 
+        Dense(64, 64, gelu), 
         Dense(64, encoder_input_size)
-    ) |> f64
-    μ_layer = Dense(64, latent_dim) |> f64
-    σ_layer = Dense(64, latent_dim) |> f64
+    ) |> f32
+    μ_layer = Dense(64, latent_dim) |> f32
+    σ_layer = Dense(64, latent_dim) |> f32
 
     return SurrogateProtocolVAE(;
         simulation = simulation,
@@ -103,26 +121,10 @@ function SurrogateProtocolVAE(simulation::Simulation, training_data_directory::S
     )
 end
 
-function load_training_data(training_data_directory::String)
-    file_names = filter(x -> endswith(x, ".h5"), readdir(training_data_directory, join=true))
-    training_data = Vector{Matrix{Float64}}(undef, length(file_names))
-
-    for sample_id in eachindex(file_names)
-        try
-            consumer_log = load_entanglement_consumer_log(file_names[sample_id])
-            training_data[sample_id] = hcat(consumer_log.simulation_log.time, consumer_log.simulation_log.state')
-        catch e
-            throw(e)
-        end
-    end
-
-    return training_data
-end
-
 struct VariationalAutoencoder 
     encoder::Chain
     decoder::Chain
-    β::Float64
+    β::Float32
     device::Flux.MLDataDevices.AbstractDevice
 end
 
@@ -139,22 +141,28 @@ function vae_loss(m::VariationalAutoencoder, x)
     enc_out = m.encoder(x)
     μ = enc_out[1:latent_dim, :]
     logσ² = enc_out[latent_dim+1:end, :]
-    z = sample_latent(μ, exp.(logσ² ./ 2.0), m.device)
+    z = sample_latent(μ, exp.(logσ² ./ 2.0f0), m.device)
     x_hat = m.decoder(z)
 
     recon_loss = sum((x .- x_hat).^2) / size(x, 2)
-    kl_loss = -0.5f0 * sum(1f0 .+ logσ² .- μ.^2 .- exp.(logσ²)) / size(x, 2)
+    kl_loss = -0.5f0 * sum(1.0f0 .+ logσ² .- μ.^2 .- exp.(logσ²)) / size(x, 2)
     
     return recon_loss + m.β * kl_loss
 end
 
-function _train!(protocol::SurrogateProtocolVAE, β::Float64)
+function _train!(protocol::SurrogateProtocolVAE, β::Number)
     model = VariationalAutoencoder(protocol.encoder_chain, protocol.decoder_chain, β, protocol.device)
     model_train_device = model |> protocol.device
     opt_state = Flux.setup(protocol.optimiser, model_train_device)
 
-    training_data_on_device = protocol.training_data |> protocol.device
-    loader = Flux.DataLoader(training_data_on_device, batchsize=protocol.batchsize, shuffle=protocol.shuffle)
+    training_data_on_device = Float32.(protocol.training_data) |> protocol.device
+    loader = Flux.DataLoader(
+        training_data_on_device, 
+        batchsize=protocol.batchsize, 
+        shuffle=protocol.shuffle,
+        parallel=true,
+        collate=true
+    )
 
     println("Training VAE... (β = $β)")
     for epoch in 1:protocol.epochs
@@ -164,7 +172,7 @@ function _train!(protocol::SurrogateProtocolVAE, β::Float64)
             loss, grads = Flux.withgradient(model_train_device) do m
                 vae_loss(m, x_batch)
             end
-            
+
             Flux.update!(opt_state, model_train_device, grads[1])
             epoch_loss += loss
         end
@@ -178,9 +186,9 @@ function _train!(protocol::SurrogateProtocolVAE, β::Float64)
     println("Training complete!")
 end
 
-function _train!(protocol::SurrogateProtocolVAE, β::Vector{Float64})
+function _train!(protocol::SurrogateProtocolVAE, β::Vector)
     for i in eachindex(β)
-        _train!(protocol,β[i])
+        _train!(protocol,Float64(β[i]) |> protocol.device)
     end
 end
 
@@ -199,7 +207,7 @@ function (protocol::SurrogateProtocolVAE)(n_samples::Int)
 
     for i in 1:n_samples
         latent_sample = rand(Normal(0.0,1.0),protocol.latent_dim)
-        log[i,:] = protocol.decoder_chain(latent_sample)
+        log[i,:] = protocol.decoder_chain(Float32.(latent_sample))
     end
 
     return log
@@ -207,11 +215,24 @@ end
 
 end
 
+using Metal
 using ConcurrentSim, Plots
 
 sim = Simulation()
-surrogate = SurrogateProtocols.SurrogateProtocolVAE(sim, "saved_data/F_0.95/"; simulation_window_size = 10, latent_dim = 10, batchsize = 512, epochs = 200, β = [0.005, 1.0, 10.0])
+surrogate = SurrogateProtocols.SurrogateProtocolVAE(sim, "saved_data/F_0.95/"; 
+    simulation_window_size = 1, 
+    latent_dim = 5, 
+    batchsize = 128, 
+    epochs = 100, 
+    β = [0.01, 1.0]
+)
 SurrogateProtocols.train!(surrogate)
 
-sim_data = surrogate(30000)
-histogram(sim_data[:])
+sim_data = surrogate(50000)
+p1 = histogram(sim_data[:,1], normalize=:pdf,label="VAE Surrogate",frame=:box)
+histogram!(surrogate.training_data[1,:], normalize=:pdf,label="QSavory Simulation",frame=:box)
+
+p2 = histogram(sim_data[:,3], normalize=:pdf,label="VAE Surrogate",frame=:box)
+histogram!(surrogate.training_data[3,:], normalize=:pdf,label="QSavory Simulation",frame=:box)
+
+plot(p1,p2,layout=(2,1))
