@@ -13,6 +13,13 @@ export
     SurrogateProtocolVAE
 abstract type AbstractProtocol end
 
+struct LatentSpaceNormalParameters{T<:AbstractVector}
+    μ_layer::T
+    σ_layer::T
+end
+
+Flux.@functor LatentSpaceNormalParameters
+
 """
 $TYPEDEF
 
@@ -39,6 +46,8 @@ $FIELDS
     μ_layer::Dense
     """Dense layer for computing the standard deviation (σ) of the latent distribution."""
     σ_layer::Dense
+    """Parameters of the normal distributions of each of the latent variables."""
+    latent_space_normal_parameters::LatentSpaceNormalParameters
     """Weighting factor for the KL divergence term in the VAE loss function."""
     β::Union{Float64,Vector{Float64}} = 1.0
     """Number of training epochs for the VAE."""
@@ -92,20 +101,25 @@ function SurrogateProtocolVAE(simulation::Simulation, training_data_directory::S
     reshaped_training_data = Float64.(reshaped_training_data)
     encoder_input_size = size(reshaped_training_data)[1]
     encoder_chain = Chain(
-        Dense(encoder_input_size, 64, gelu), 
-        Dense(64, 64, gelu), 
+        Dense(encoder_input_size, 32, relu), 
+        Dense(32, 32, relu), 
         Parallel(vcat, 
-            Dense(64 => latent_dim), 
-            Dense(64 => latent_dim)
+            Dense(32 => latent_dim), 
+            Dense(32 => latent_dim)
     )
     ) |> f32
     decoder_chain = Chain(
-        Dense(latent_dim, 64, gelu), 
-        Dense(64, 64, gelu), 
-        Dense(64, encoder_input_size)
+        Dense(latent_dim, 32, relu), 
+        Dense(32, 32, relu), 
+        Dense(32, encoder_input_size)
     ) |> f32
-    μ_layer = Dense(64, latent_dim) |> f32
-    σ_layer = Dense(64, latent_dim) |> f32
+    μ_layer = Dense(32, latent_dim) |> f32
+    σ_layer = Dense(32, latent_dim) |> f32
+
+    latent_space_normal_parameters = LatentSpaceNormalParameters(
+        zeros(Float32, latent_dim),
+        zeros(Float32, latent_dim)
+    )
 
     return SurrogateProtocolVAE(;
         simulation = simulation,
@@ -117,6 +131,7 @@ function SurrogateProtocolVAE(simulation::Simulation, training_data_directory::S
         encoder_chain = encoder_chain, 
         μ_layer = μ_layer, 
         σ_layer = σ_layer,
+        latent_space_normal_parameters = latent_space_normal_parameters,
         kwargs...
     )
 end
@@ -125,6 +140,7 @@ struct VariationalAutoencoder
     encoder::Chain
     decoder::Chain
     β::Float32
+    latent_space_normal_parameters::LatentSpaceNormalParameters
     device::Flux.MLDataDevices.AbstractDevice
 end
 
@@ -136,22 +152,36 @@ function sample_latent(μ, σ, device)
 end
 
 function vae_loss(m::VariationalAutoencoder, x)
-    latent_dim = size(m.decoder[1].weight)[2]
+    latent_dim = size(m.decoder[1].weight,2)
+    batch_size = size(x,2)
 
     enc_out = m.encoder(x)
     μ = enc_out[1:latent_dim, :]
     logσ² = enc_out[latent_dim+1:end, :]
-    z = sample_latent(μ, exp.(logσ² ./ 2.0f0), m.device)
+    z = sample_latent(μ, exp.(logσ² .* 0.5f0), m.device)
     x_hat = m.decoder(z)
 
-    recon_loss = sum((x .- x_hat).^2) / size(x, 2)
-    kl_loss = -0.5f0 * sum(1.0f0 .+ logσ² .- μ.^2 .- exp.(logσ²)) / size(x, 2)
+    l_μ = m.latent_space_normal_parameters.μ_layer
+    l_logσ² = m.latent_space_normal_parameters.σ_layer
+
+    l_μ = repeat(l_μ, 1, batch_size)
+    l_logσ² = repeat(l_logσ², 1, batch_size)
+
+    recon_loss = sum((x .- x_hat).^2) / batch_size
+    # kl_loss = -0.5f0 * sum(1.0f0 .+ logσ² .- μ.^2 .- exp.(logσ²)) / batch_size
+    kl_loss = 0.5f0 * sum((exp.(l_logσ²) .* (l_logσ² .- logσ²) .- exp.(l_logσ²) .+ exp.(logσ²) + (l_μ - μ).^2) .* exp.(-l_logσ²)) / batch_size
     
     return recon_loss + m.β * kl_loss
 end
 
 function _train!(protocol::SurrogateProtocolVAE, β::Number)
-    model = VariationalAutoencoder(protocol.encoder_chain, protocol.decoder_chain, β, protocol.device)
+    model = VariationalAutoencoder(
+        protocol.encoder_chain, 
+        protocol.decoder_chain, 
+        β, 
+        protocol.latent_space_normal_parameters,
+        protocol.device
+    )
     model_train_device = model |> protocol.device
     opt_state = Flux.setup(protocol.optimiser, model_train_device)
 
@@ -160,8 +190,7 @@ function _train!(protocol::SurrogateProtocolVAE, β::Number)
         training_data_on_device, 
         batchsize=protocol.batchsize, 
         shuffle=protocol.shuffle,
-        parallel=true,
-        collate=true
+        parallel=true
     )
 
     println("Training VAE... (β = $β)")
@@ -205,8 +234,12 @@ end
 function (protocol::SurrogateProtocolVAE)(n_samples::Int)
     log = zeros(Float64,n_samples,size(protocol.training_data)[1])
 
+    l_μ = protocol.latent_space_normal_parameters.μ_layer
+    l_σ = exp.(0.5f0 .* protocol.latent_space_normal_parameters.σ_layer)
+
     for i in 1:n_samples
         latent_sample = rand(Normal(0.0,1.0),protocol.latent_dim)
+        latent_sample = l_μ .+ l_σ .* latent_sample
         log[i,:] = protocol.decoder_chain(Float32.(latent_sample))
     end
 
@@ -215,24 +248,3 @@ end
 
 end
 
-using Metal
-using ConcurrentSim, Plots
-
-sim = Simulation()
-surrogate = SurrogateProtocols.SurrogateProtocolVAE(sim, "saved_data/F_0.95/"; 
-    simulation_window_size = 1, 
-    latent_dim = 5, 
-    batchsize = 128, 
-    epochs = 100, 
-    β = [0.01, 1.0]
-)
-SurrogateProtocols.train!(surrogate)
-
-sim_data = surrogate(50000)
-p1 = histogram(sim_data[:,1], normalize=:pdf,label="VAE Surrogate",frame=:box)
-histogram!(surrogate.training_data[1,:], normalize=:pdf,label="QSavory Simulation",frame=:box)
-
-p2 = histogram(sim_data[:,3], normalize=:pdf,label="VAE Surrogate",frame=:box)
-histogram!(surrogate.training_data[3,:], normalize=:pdf,label="QSavory Simulation",frame=:box)
-
-plot(p1,p2,layout=(2,1))
