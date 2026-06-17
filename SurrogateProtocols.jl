@@ -13,13 +13,6 @@ export
     SurrogateProtocolVAE
 abstract type AbstractProtocol end
 
-struct LatentSpaceNormalParameters{T<:AbstractVector}
-    μ_layer::T
-    σ_layer::T
-end
-
-Flux.@functor LatentSpaceNormalParameters
-
 """
 $TYPEDEF
 
@@ -46,8 +39,6 @@ $FIELDS
     μ_layer::Dense
     """Dense layer for computing the standard deviation (σ) of the latent distribution."""
     σ_layer::Dense
-    """Parameters of the normal distributions of each of the latent variables."""
-    latent_space_normal_parameters::LatentSpaceNormalParameters
     """Weighting factor for the KL divergence term in the VAE loss function."""
     β::Union{Float64,Vector{Float64}} = 1.0
     """Number of training epochs for the VAE."""
@@ -102,24 +93,21 @@ function SurrogateProtocolVAE(simulation::Simulation, training_data_directory::S
     encoder_input_size = size(reshaped_training_data)[1]
     encoder_chain = Chain(
         Dense(encoder_input_size, 32, relu), 
-        Dense(32, 32, relu), 
+        Dense(32, 32, relu),
+        Dense(32, 32, relu),
         Parallel(vcat, 
             Dense(32 => latent_dim), 
             Dense(32 => latent_dim)
-    )
-    ) |> f32
+        )
+    ) |> f64
     decoder_chain = Chain(
         Dense(latent_dim, 32, relu), 
+        Dense(32, 32, relu),
         Dense(32, 32, relu), 
         Dense(32, encoder_input_size)
-    ) |> f32
-    μ_layer = Dense(32, latent_dim) |> f32
-    σ_layer = Dense(32, latent_dim) |> f32
-
-    latent_space_normal_parameters = LatentSpaceNormalParameters(
-        zeros(Float32, latent_dim),
-        zeros(Float32, latent_dim)
-    )
+    ) |> f64
+    μ_layer = Dense(32, latent_dim) |> f64
+    σ_layer = Dense(32, latent_dim) |> f64
 
     return SurrogateProtocolVAE(;
         simulation = simulation,
@@ -131,7 +119,6 @@ function SurrogateProtocolVAE(simulation::Simulation, training_data_directory::S
         encoder_chain = encoder_chain, 
         μ_layer = μ_layer, 
         σ_layer = σ_layer,
-        latent_space_normal_parameters = latent_space_normal_parameters,
         kwargs...
     )
 end
@@ -139,8 +126,7 @@ end
 struct VariationalAutoencoder 
     encoder::Chain
     decoder::Chain
-    β::Float32
-    latent_space_normal_parameters::LatentSpaceNormalParameters
+    β::Float64
     device::Flux.MLDataDevices.AbstractDevice
 end
 
@@ -161,15 +147,8 @@ function vae_loss(m::VariationalAutoencoder, x)
     z = sample_latent(μ, exp.(logσ² .* 0.5f0), m.device)
     x_hat = m.decoder(z)
 
-    l_μ = m.latent_space_normal_parameters.μ_layer
-    l_logσ² = m.latent_space_normal_parameters.σ_layer
-
-    l_μ = repeat(l_μ, 1, batch_size)
-    l_logσ² = repeat(l_logσ², 1, batch_size)
-
-    recon_loss = sum((x .- x_hat).^2) / batch_size
-    # kl_loss = -0.5f0 * sum(1.0f0 .+ logσ² .- μ.^2 .- exp.(logσ²)) / batch_size
-    kl_loss = 0.5f0 * sum((exp.(l_logσ²) .* (l_logσ² .- logσ²) .- exp.(l_logσ²) .+ exp.(logσ²) + (l_μ - μ).^2) .* exp.(-l_logσ²)) / batch_size
+    recon_loss = 0.5f0 * sum((x .- x_hat).^2) / batch_size
+    kl_loss = -0.5f0 * sum(1.0f0 .+ logσ² .- μ.^2 .- exp.(logσ²)) / batch_size
     
     return recon_loss + m.β * kl_loss
 end
@@ -178,14 +157,13 @@ function _train!(protocol::SurrogateProtocolVAE, β::Number)
     model = VariationalAutoencoder(
         protocol.encoder_chain, 
         protocol.decoder_chain, 
-        β, 
-        protocol.latent_space_normal_parameters,
+        β,
         protocol.device
     )
     model_train_device = model |> protocol.device
     opt_state = Flux.setup(protocol.optimiser, model_train_device)
 
-    training_data_on_device = Float32.(protocol.training_data) |> protocol.device
+    training_data_on_device = Float64.(protocol.training_data) |> protocol.device
     loader = Flux.DataLoader(
         training_data_on_device, 
         batchsize=protocol.batchsize, 
@@ -232,15 +210,11 @@ end
 end
 
 function (protocol::SurrogateProtocolVAE)(n_samples::Int)
-    log = zeros(Float64,n_samples,size(protocol.training_data)[1])
-
-    l_μ = protocol.latent_space_normal_parameters.μ_layer
-    l_σ = exp.(0.5f0 .* protocol.latent_space_normal_parameters.σ_layer)
+    window_size = size(protocol.training_data)[1]
+    log = zeros(Float64,n_samples,window_size)
 
     for i in 1:n_samples
-        latent_sample = rand(Normal(0.0,1.0),protocol.latent_dim)
-        latent_sample = l_μ .+ l_σ .* latent_sample
-        log[i,:] = protocol.decoder_chain(Float32.(latent_sample))
+        log[i,:] = rand(Normal(0.0,1.0),window_size)
     end
 
     return log

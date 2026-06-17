@@ -1,16 +1,17 @@
-using ConcurrentSim, Plots, KernelDensity, Distributions
+using ConcurrentSim, Plots, KernelDensity, Distributions, Flux
 
 include("SurrogateProtocols.jl")
 
-# sim = Simulation()
-# surrogate = SurrogateProtocols.SurrogateProtocolVAE(sim, "saved_data/F_0.95/"; 
-#     simulation_window_size = 10,
-#     latent_dim = 15, 
-#     batchsize = 256, 
-#     epochs = 300, 
-#     β = [0.01, 1.0]
-# )
-# SurrogateProtocols.train!(surrogate)
+sim = Simulation()
+surrogate = SurrogateProtocols.SurrogateProtocolVAE(sim, "saved_data/F_0.95/"; 
+    simulation_window_size = 10,
+    latent_dim = 15, 
+    batchsize = 128, 
+    epochs = 300, 
+    β = [0.01, 1.0],
+    optimiser = Adam(;eta = 1.0E-5, beta = (0.8,0.999))
+)
+SurrogateProtocols.train!(surrogate)
 
 sim_data = surrogate(50000)
 
