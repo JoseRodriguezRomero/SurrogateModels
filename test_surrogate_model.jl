@@ -1,17 +1,22 @@
 using ConcurrentSim, Plots, KernelDensity, Distributions, Flux
+using FileIO
 
-include("SurrogateProtocols.jl")
+include("SurrogateProtocolVAE.jl")
+
+using .SurrogateProtocolVAE
+
+# sim = Simulation()
+# surrogate = SurrogateProtocolVAE.SurrogateProtocolVAE(sim;
+#     single_shot = true,
+#     training_data_path = "sequence_data/linear_17_swap_prob=0.9.h5", 
+#     saved_model = "trained_surrogates/sequence/linear_17_swap_prob=0.9.h5"
+# )
 
 sim = Simulation()
-surrogate = SurrogateProtocols.SurrogateProtocolVAE(sim, "saved_data/F_0.95/"; 
-    simulation_window_size = 10,
-    latent_dim = 15, 
-    batchsize = 128, 
-    epochs = 300, 
-    β = [0.01, 1.0],
-    optimiser = Adam(;eta = 1.0E-5, beta = (0.8,0.999))
+surrogate = SurrogateProtocolVAE.SurrogateProtocolVAE(sim;
+    training_data_path = "saved_data/F_0.95/",
+    saved_model = "trained_surrogates/quantum_savory/F_0.95.h5"
 )
-SurrogateProtocols.train!(surrogate)
 
 sim_data = surrogate(50000)
 
@@ -29,8 +34,10 @@ function compare_kde_plot(vae_sim::Vector, ground_truth::Vector)
     dx = (x1-x0) / 300.0
     plt_range = collect(x0:dx:x1)
 
-    p = plot(plt_range, vae_kde_pdf.(plt_range), label="VAE Surrogate",frame=:box, linewidth=3)
-    plot!(plt_range, ground_truth_kde_pdf.(plt_range), label="QSavory Simulation",frame=:box, linewidth=3)
+    p = histogram(ground_truth, normalize=:pdf, label="QSavory Simulation")
+    p = plot!(plt_range, vae_kde_pdf.(plt_range), label="VAE Surrogate",frame=:box, linewidth=3)
+    # plot!(plt_range, ground_truth_kde_pdf.(plt_range), label="QSavory Simulation",frame=:box, linewidth=3)
+    
     return p
 end
 
@@ -43,6 +50,7 @@ end
 simulation_window = surrogate.simulation_window_size
 p1_range = (0*simulation_window+1):(1*simulation_window)
 p2_range = (2*simulation_window+1):(3*simulation_window)
+# p2_range = (1*simulation_window+1):(2*simulation_window)
 
 p1 = compare_kde_plot(sim_data[:,p1_range][:], bootstrapped_data[:,p1_range][:])
 p2 = compare_kde_plot(sim_data[:,p2_range][:], bootstrapped_data[:,p2_range][:])

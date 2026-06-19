@@ -1,4 +1,4 @@
-module SurrogateProtocols
+module SurrogateProtocolVAE
 
 using Flux
 using Random
@@ -6,8 +6,6 @@ using Distributions
 using DocStringExtensions
 using QuantumSavory
 using ConcurrentSim, ResumableFunctions
-
-include("load_log_files.jl")
 
 export 
     SurrogateProtocolVAE
@@ -23,8 +21,8 @@ $FIELDS
 @kwdef struct SurrogateProtocolVAE <: AbstractProtocol
     """time-and-schedule-tracking instance from `ConcurrentSim`"""
     simulation::Simulation
-    """Directory containing the training data (HDF5 files with simulation logs)."""
-    training_data_directory::String
+    """Path containing the training data (can be a directory or a specific file)."""
+    training_data_path::String
     """Vector containing all the data that is to be used for training."""
     training_data::Matrix{Float64}
     """Number of simulated instances of entanglement consumption."""
@@ -35,10 +33,6 @@ $FIELDS
     decoder_chain::Chain
     """Encoder chain of the VAE, responsible for encoding time-series data into a latent representation."""
     encoder_chain::Chain
-    """Dense layer for computing the mean (μ) of the latent distribution."""
-    μ_layer::Dense
-    """Dense layer for computing the standard deviation (σ) of the latent distribution."""
-    σ_layer::Dense
     """Weighting factor for the KL divergence term in the VAE loss function."""
     β::Union{Float64,Vector{Float64}} = 1.0
     """Number of training epochs for the VAE."""
@@ -55,75 +49,7 @@ $FIELDS
     _log::Vector{Tuple} = Vector{Tuple}[]
 end
 
-function load_training_data(training_data_directory::String)
-    file_names = filter(x -> endswith(x, ".h5"), readdir(training_data_directory, join=true))
-    training_data = Vector{Matrix{Float64}}(undef, length(file_names))
-
-    for sample_id in eachindex(file_names)
-        try
-            consumer_log = load_entanglement_consumer_log(file_names[sample_id])
-            training_data[sample_id] = hcat(consumer_log.simulation_log.time, consumer_log.simulation_log.state')
-        catch e
-            throw(e)
-        end
-    end
-
-    return training_data
-end
-
-function SurrogateProtocolVAE(simulation::Simulation, training_data_directory::String; simulation_window_size::Int = 1, latent_dim::Int = 2, kwargs...)
-    raw_training_data = load_training_data(training_data_directory)
-    reshaped_training_data = Vector{Matrix{Float64}}(undef, length(raw_training_data))
-
-    for i in eachindex(raw_training_data)
-        total_rows = size(raw_training_data[i], 1)
-        total_windows = total_rows - simulation_window_size
-
-        raw_mat = raw_training_data[i]
-        t_diff_mat = zeros(Float64, size(raw_mat)[1]-1, size(raw_mat)[2])
-        t_diff_mat[:,1] = diff(raw_mat[:,1])
-        t_diff_mat[:,2:end] = raw_mat[1:(end-1),2:end]
-
-        reshaped_matrix = [vec(t_diff_mat[j:(j + simulation_window_size - 1), :]) for j in 1:total_windows]
-        reshaped_training_data[i] = collect(transpose(reduce(hcat, reshaped_matrix)))
-    end
-
-    reshaped_training_data = collect(transpose(reduce(vcat,reshaped_training_data)))
-    reshaped_training_data = Float64.(reshaped_training_data)
-    encoder_input_size = size(reshaped_training_data)[1]
-    encoder_chain = Chain(
-        Dense(encoder_input_size, 32, relu), 
-        Dense(32, 32, relu),
-        Dense(32, 32, relu),
-        Parallel(vcat, 
-            Dense(32 => latent_dim), 
-            Dense(32 => latent_dim)
-        )
-    ) |> f64
-    decoder_chain = Chain(
-        Dense(latent_dim, 32, relu), 
-        Dense(32, 32, relu),
-        Dense(32, 32, relu), 
-        Dense(32, encoder_input_size)
-    ) |> f64
-    μ_layer = Dense(32, latent_dim) |> f64
-    σ_layer = Dense(32, latent_dim) |> f64
-
-    return SurrogateProtocolVAE(;
-        simulation = simulation,
-        training_data_directory = training_data_directory,
-        training_data = reshaped_training_data,
-        simulation_window_size = simulation_window_size, 
-        latent_dim = latent_dim, 
-        decoder_chain = decoder_chain, 
-        encoder_chain = encoder_chain, 
-        μ_layer = μ_layer, 
-        σ_layer = σ_layer,
-        kwargs...
-    )
-end
-
-struct VariationalAutoencoder 
+struct VariationalAutoencoder
     encoder::Chain
     decoder::Chain
     β::Float64
@@ -205,20 +131,110 @@ end
 
 @resumable function (protocol::SurrogateProtocolVAE)()
     while true
-
     end
 end
 
 function (protocol::SurrogateProtocolVAE)(n_samples::Int)
     window_size = size(protocol.training_data)[1]
-    log = zeros(Float64,n_samples,window_size)
+    sim_log = zeros(Float64,n_samples,window_size)
 
     for i in 1:n_samples
-        log[i,:] = rand(Normal(0.0,1.0),window_size)
+        latent_sample = rand(Normal(0.0,1.0),protocol.latent_dim)
+        sim_log[i,:] = protocol.decoder_chain(latent_sample)
     end
 
-    return log
+    return sim_log
 end
+
+@enum ActivationFunction::UInt8 begin
+    _relu       = 0
+    _gelu       = 1
+    _tanh       = 2
+    _sigmoid    = 3
+    _softmax    = 4
+    _leakyrelu  = 5
+    _elu        = 6
+    _swish      = 7
+    _identity   = 8
+end
+
+struct LayerParameters
+    node_bias::Vector{Float64}
+    node_weights::Matrix{Float64}
+    activation_function::ActivationFunction
+end
+
+struct ChainParameters
+    layers::Vector{LayerParameters}
+end
+
+struct VariationalAutoencoderParameters
+    encoder::ChainParameters
+    decoder::ChainParameters
+end
+
+function layer_parameter(layer::Dense)
+    activation_function_map = Dict(
+        relu => _relu,
+        gelu => _gelu,
+        tanh => _tanh,
+        sigmoid => _sigmoid,
+        softmax => _softmax,
+        leakyrelu => _leakyrelu,
+        elu => _elu,
+        swish => _swish,
+        identity => _identity
+    )
+
+    if hasproperty(layer,:σ)
+        return LayerParameters(
+            layer.bias,
+            layer.weight,
+            activation_function_map[layer.σ]
+        )
+    end
+
+    return LayerParameters(
+        layer.bias,
+        layer.weight,
+        activation_function_map[identity]
+    )
+end
+
+function layer_parameter(layer::LayerParameters)
+    activation_function_map = Dict(
+        _relu => relu,
+        _gelu => gelu,
+        _tanh => tanh,
+        _sigmoid => sigmoid,
+        _softmax => softmax,
+        _leakyrelu => leakyrelu,
+        _elu => elu,
+        _swish => swish,
+        _identity => identity
+    )
+
+    return Dense(layer.node_weights, layer.node_bias, activation_function_map[layer.activation_function])
+end
+
+function chain_parameters(chain::Chain)
+    layers = Vector{LayerParameters}(undef, length(chain))
+    for i in eachindex(chain)
+        layers[i] = layer_parameter(chain[i])
+    end
+
+    return ChainParameters(layers)
+end
+
+function variational_autoencoder_parameters(prot::SurrogateProtocolVAE)
+    return VariationalAutoencoderParameters(
+        chain_parameters(prot.encoder_chain),
+        chain_parameters(prot.decoder_chain)
+    )
+end
+
+include("SurrogateProtocolVAE_FileIO.jl")
+include("SurrogateProtocolVAE_HDF5.jl")
 
 end
 
