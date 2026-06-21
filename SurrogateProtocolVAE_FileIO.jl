@@ -97,6 +97,8 @@ function default_encoder_network(num_inputs::Int, latent_dim::Int; hidden_layer_
         Dense(num_inputs, hidden_layer_size, swish), 
         Dense(hidden_layer_size, hidden_layer_size, sigmoid),
         Dense(hidden_layer_size, hidden_layer_size, swish),
+        Dense(hidden_layer_size, hidden_layer_size, sigmoid),
+        Dense(hidden_layer_size, hidden_layer_size, swish),
         Dense(hidden_layer_size => 2*latent_dim)
     ) |> f64
 end
@@ -105,6 +107,8 @@ end
 function default_decoder_network(num_inputs::Int, latent_dim::Int; hidden_layer_size::Int = 32)
     return Chain(
         Dense(latent_dim, hidden_layer_size, swish),
+        Dense(hidden_layer_size, hidden_layer_size, sigmoid),
+        Dense(hidden_layer_size, hidden_layer_size, swish),
         Dense(hidden_layer_size, hidden_layer_size, sigmoid),
         Dense(hidden_layer_size, hidden_layer_size, swish),
         Dense(hidden_layer_size, num_inputs)

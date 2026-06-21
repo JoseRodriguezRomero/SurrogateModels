@@ -1,5 +1,4 @@
-using ConcurrentSim, Plots, KernelDensity, Distributions, Flux
-using FileIO
+using ConcurrentSim, Plots, KernelDensity
 
 include("../SurrogateProtocolVAE.jl")
 
@@ -32,7 +31,7 @@ function compare_kde_plot(vae_sim::Vector, ground_truth::Vector)
     plt_range = collect(x0:dx:x1)
 
     p = histogram(ground_truth, normalize=:pdf, label="SeQUeNCe Simulation")
-    p = plot!(plt_range, vae_kde_pdf.(plt_range), label="VAE Surrogate (KDE from samples)",frame=:box, linewidth=3)
+    p = plot!(plt_range, vae_kde_pdf.(plt_range), label="VAE Surrogate (KDE from synthetic data)",frame=:box, linewidth=3)
     # plot!(plt_range, ground_truth_kde_pdf.(plt_range), label="SeQUeNCe Simulation",frame=:box, linewidth=3)
     
     return p

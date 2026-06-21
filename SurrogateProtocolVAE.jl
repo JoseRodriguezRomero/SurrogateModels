@@ -2,7 +2,9 @@ module SurrogateProtocolVAE
 
 using Flux
 using Random
+using Statistics
 using Distributions
+using LinearAlgebra
 using DocStringExtensions
 using QuantumSavory
 using ConcurrentSim, ResumableFunctions
@@ -63,7 +65,7 @@ function sample_latent(μ, σ, device)
     return μ .+ σ .* ϵ
 end
 
-function vae_loss(m::VariationalAutoencoder, x)
+function vae_loss(m::VariationalAutoencoder, input_weights, x)
     latent_dim = size(m.decoder[1].weight,2)
     batch_size = size(x,2)
 
@@ -73,8 +75,8 @@ function vae_loss(m::VariationalAutoencoder, x)
     z = sample_latent(μ, exp.(logσ² .* 0.5f0), m.device)
     x_hat = m.decoder(z)
 
-    recon_loss = 0.5f0 * sum((x .- x_hat).^2) / batch_size
-    kl_loss = -0.5f0 * sum(1.0f0 .+ logσ² .- μ.^2 .- exp.(logσ²)) / batch_size
+    recon_loss = 0.5f0 .* sum(input_weights .* ((x .- x_hat).^2)) / batch_size
+    kl_loss = 0.5f0 .* sum(exp.(logσ²) .+ μ.^2 .- logσ² .- 1.0f0) / batch_size
     
     return recon_loss + m.β * kl_loss
 end
@@ -97,13 +99,17 @@ function _train!(protocol::SurrogateProtocolVAE, β::Number)
         parallel=true
     )
 
+    input_weights = [1.0 / var(protocol.training_data[i,:]) for i in 1:size(protocol.training_data,1)]
+    input_weights[input_weights .> 1.0E9] .= 0.0 # ignore nearly deterministic inputs
+    input_weights_device = input_weights |> protocol.device
+
     println("Training VAE... (β = $β)")
     for epoch in 1:protocol.epochs
         epoch_loss = 0f0
 
         for x_batch in loader
             loss, grads = Flux.withgradient(model_train_device) do m
-                vae_loss(m, x_batch)
+                vae_loss(m, input_weights_device, x_batch)
             end
 
             Flux.update!(opt_state, model_train_device, grads[1])
@@ -113,7 +119,7 @@ function _train!(protocol::SurrogateProtocolVAE, β::Number)
         # Print progress every 5 epochs
         if epoch % 5 == 0 || epoch == 1
             average_loss = epoch_loss / length(loader)
-            println("Epoch $epoch | Average Loss: $(round(average_loss, digits=4))")
+            println("Epoch $epoch | Average Loss: $average_loss")
         end
     end
     println("Training complete!")
