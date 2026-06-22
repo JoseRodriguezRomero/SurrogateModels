@@ -29,7 +29,7 @@ function compare_kde_plot(vae_sim::Vector, ground_truth::Vector)
     dx = (x1-x0) / 300.0
     plt_range = collect(x0:dx:x1)
 
-    p = histogram(ground_truth, normalize=:pdf, label="QuantumSavory Simulation")
+    p = histogram(ground_truth, normalize=:pdf, label="QuantumSavory simulated data")
     plot!(plt_range, vae_kde_pdf.(plt_range), label="VAE Surrogate (KDE from synthetic data)",frame=:box, linewidth=3)
     # plot!(plt_range, ground_truth_kde_pdf.(plt_range), label="QSavory Simulation",frame=:box, linewidth=3)
     
@@ -50,5 +50,7 @@ plot!(p2, ylabel="Probability\nDensity")
 plot!(p2, xlabel="<X⊗X>")
 plot!(p2, legend=false)
 
-plot(p1,p2,layout=(2,1))
+p = plot(p1,p2,layout=(2,1))
+savefig(p, base_dir * "../trained_surrogates/quantum_savory/F_0.95.png")
+display(p)
 
