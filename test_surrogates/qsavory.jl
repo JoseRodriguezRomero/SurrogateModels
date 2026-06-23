@@ -1,4 +1,4 @@
-using ConcurrentSim, Plots, KernelDensity
+using ConcurrentSim, Plots, KernelDensity, Distributions, Measures
 
 include("../SurrogateProtocolVAE.jl")
 
@@ -6,14 +6,16 @@ using .SurrogateProtocolVAE
 
 base_dir = @__DIR__() * "/"
 
+fidelity = 0.95
+
 sim = Simulation()
 surrogate = SurrogateProtocolVAE.SurrogateProtocolVAE(sim;
-    training_data_path = base_dir * "../saved_data/F_0.95/",
-    saved_model = base_dir * "../trained_surrogates/quantum_savory/F_0.95.h5"
+    training_data_path = base_dir * "../saved_data/F_$fidelity/",
+    saved_model = base_dir * "../trained_surrogates/quantum_savory/F_$fidelity.h5"
 )
 
 num_vae_samples = 125000
-sim_data = surrogate(num_vae_samples)
+@time sim_data = surrogate(num_vae_samples)
 
 function compare_kde_plot(vae_sim::Vector, ground_truth::Vector)
     vae_kde = kde(vae_sim)
@@ -36,6 +38,28 @@ function compare_kde_plot(vae_sim::Vector, ground_truth::Vector)
     return p
 end
 
+function compare_2d_kde_plot(Δt::Vector, obs::Vector, plot_title::String)
+    kde = KernelDensity.kde((Δt, obs))
+    kde = KernelDensity.InterpKDE(kde)
+    kde_pdf(x,y) = Distributions.pdf(kde,x,y)
+
+    x0 = minimum(Δt)
+    x1 = maximum(Δt)
+    dx = (x1 - x0) / 400.0
+
+    y0 = minimum(obs)
+    y1 = maximum(obs)
+    dy = (y1 - y0) / 400.0
+
+    plt = Plots.heatmap(x0:dx:x1, y0:dy:y1, kde_pdf, color=:viridis)
+    Plots.plot!(frame=:box)
+    Plots.plot!(xlabel = "Time to serve [s]")
+    Plots.plot!(ylabel = "<X⊗X>")
+    Plots.plot!(colorbar_title = "\np(Δt,<X⊗X>)")
+    Plots.plot!(title = plot_title)
+    return plt
+end
+
 simulation_window = surrogate.simulation_window_size
 p1_range = (0*simulation_window+1):(1*simulation_window)
 p2_range = (2*simulation_window+1):(3*simulation_window)
@@ -51,6 +75,21 @@ plot!(p2, xlabel="<X⊗X>")
 plot!(p2, legend=false)
 
 p = plot(p1,p2,layout=(2,1))
-savefig(p, base_dir * "../trained_surrogates/quantum_savory/F_0.95.png")
-display(p)
+savefig(p, base_dir * "../trained_surrogates/quantum_savory/F_$fidelity.png")
+savefig(p, base_dir * "../trained_surrogates/quantum_savory/F_$fidelity.pdf")
+savefig(p, base_dir * "../trained_surrogates/quantum_savory/F_$fidelity.svg")
 
+p1 = compare_2d_kde_plot(surrogate.training_data[p1_range,:][:], surrogate.training_data[p2_range,:][:], "2D KDE from QuantumSavory Data")
+p2 = compare_2d_kde_plot(sim_data[:,p1_range][:], sim_data[:,p2_range][:], "2D KDE from VAE Surrogate")
+
+# plot!(p1,xlims=(0,10),ylims=(0.01,0.06))
+# plot!(p2,xlims=(0,10),ylims=(0.01,0.06))
+
+plot!(p1,xlims=(0,10),ylims=(0.1,0.5))
+plot!(p2,xlims=(0,10),ylims=(0.1,0.5))
+
+p = plot(p1,p2,layout=(2,1), right_margin = 5mm)
+savefig(p, base_dir * "../trained_surrogates/quantum_savory/2d_kde_F_$fidelity.png")
+savefig(p, base_dir * "../trained_surrogates/quantum_savory/2d_kde_F_$fidelity.pdf")
+savefig(p, base_dir * "../trained_surrogates/quantum_savory/2d_kde_F_$fidelity.svg")
+display(p)
