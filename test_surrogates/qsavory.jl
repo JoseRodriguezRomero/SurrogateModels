@@ -1,4 +1,5 @@
 using ConcurrentSim, Plots, KernelDensity, Distributions, Measures
+using LaTeXStrings
 
 include("../SurrogateProtocolVAE.jl")
 
@@ -6,7 +7,7 @@ using .SurrogateProtocolVAE
 
 base_dir = @__DIR__() * "/"
 
-fidelity = 0.95
+fidelity = 0.75
 
 sim = Simulation()
 surrogate = SurrogateProtocolVAE.SurrogateProtocolVAE(sim;
@@ -60,6 +61,69 @@ function compare_2d_kde_plot(Δt::Vector, obs::Vector, plot_title::String)
     return plt
 end
 
+function compare_latent_variables(protocol::SurrogateProtocolVAE.SurrogateProtocolVAE)
+    encoder = protocol.encoder_chain
+    data = protocol.training_data
+    
+    enc_out = [encoder(data[:,i]) for i in 1:size(data,2)]
+    enc_out = collect(transpose(reduce(hcat,enc_out)))
+
+    function reparametrization_trick(μ, logσ²)
+        ϵ = randn(Float64, size(μ))
+        return μ .+ exp(logσ² / 2.0) .* ϵ 
+    end
+
+    function kde_interpolant(data::Vector)
+        vae_kde = kde(data)
+        vae_kde = InterpKDE(vae_kde)
+        vae_kde_pdf(x) = pdf(vae_kde,x)
+
+        return vae_kde_pdf
+    end
+
+    function plot_kde_interpolant(data::Vector, label::String)
+        interp = kde_interpolant(data)
+        x = collect(-10.0:0.01:10)
+        return plot(x, interp.(x), label=label, linewidth=2)
+    end
+
+    function plot_kde_interpolant!(data::Vector, label::String)
+        interp = kde_interpolant(data)
+        x = collect(-10.0:0.01:10)
+        return plot!(x, interp.(x), label=label, linewidth=2)
+    end
+
+    function reference_gaussian(x, μ, σ²)
+        return exp(-((x - μ)^2)/(2.0 * σ²))/sqrt(2.0*π*σ²)
+    end
+
+    function plot_reference_gaussian!()
+        x = collect(-10.0:0.01:10)
+        return plot!(x, reference_gaussian.(x,0,1), style=:dash, label=L"\mathcal{N} (0,1)", linewidth=5)
+    end
+
+    num_latent = round(Int, size(enc_out,2) / 2.0)
+    μ_all = enc_out[:,1:num_latent]
+    logσ²_all = enc_out[:,(num_latent+1):end]
+
+    μ_all = repeat(μ_all,1,100)
+    logσ²_all = repeat(logσ²_all,1,100)
+
+    z₁ = reparametrization_trick.(μ_all[:,1], logσ²_all[:,1])
+    z₂ = reparametrization_trick.(μ_all[:,2], logσ²_all[:,2])
+    z₃ = reparametrization_trick.(μ_all[:,3], logσ²_all[:,3])
+
+    p = plot_kde_interpolant(z₁, "z₁")
+    plot_kde_interpolant!(z₂, "z₂")
+    plot_kde_interpolant!(z₃, "z₃")
+    plot_reference_gaussian!()
+
+    plot!(p, frame=:box)
+    plot!(xlabel="Latent Variable", ylabel="Probability Density")
+
+    return p
+end
+
 simulation_window = surrogate.simulation_window_size
 p1_range = (0*simulation_window+1):(1*simulation_window)
 p2_range = (2*simulation_window+1):(3*simulation_window)
@@ -82,14 +146,20 @@ savefig(p, base_dir * "../trained_surrogates/quantum_savory/F_$fidelity.svg")
 p1 = compare_2d_kde_plot(surrogate.training_data[p1_range,:][:], surrogate.training_data[p2_range,:][:], "2D KDE from QuantumSavory Data")
 p2 = compare_2d_kde_plot(sim_data[:,p1_range][:], sim_data[:,p2_range][:], "2D KDE from VAE Surrogate")
 
-# plot!(p1,xlims=(0,10),ylims=(0.01,0.06))
-# plot!(p2,xlims=(0,10),ylims=(0.01,0.06))
+plot!(p1,xlims=(0,10),ylims=(0.01,0.06))
+plot!(p2,xlims=(0,10),ylims=(0.01,0.06))
 
-plot!(p1,xlims=(0,10),ylims=(0.1,0.5))
-plot!(p2,xlims=(0,10),ylims=(0.1,0.5))
+# plot!(p1,xlims=(0,10),ylims=(0.1,0.5))
+# plot!(p2,xlims=(0,10),ylims=(0.1,0.5))
 
 p = plot(p1,p2,layout=(2,1), right_margin = 5mm)
 savefig(p, base_dir * "../trained_surrogates/quantum_savory/2d_kde_F_$fidelity.png")
 savefig(p, base_dir * "../trained_surrogates/quantum_savory/2d_kde_F_$fidelity.pdf")
 savefig(p, base_dir * "../trained_surrogates/quantum_savory/2d_kde_F_$fidelity.svg")
 display(p)
+
+p = compare_latent_variables(surrogate)
+savefig(p, base_dir * "../trained_surrogates/quantum_savory/latent_comp_F_$fidelity.png")
+savefig(p, base_dir * "../trained_surrogates/quantum_savory/latent_comp_F_$fidelity.pdf")
+savefig(p, base_dir * "../trained_surrogates/quantum_savory/latent_comp_F_$fidelity.svg")
+
