@@ -1,4 +1,5 @@
 using ConcurrentSim, Plots, KernelDensity, Distributions, Measures
+using LaTeXStrings
 
 include("../SurrogateProtocolVAE.jl")
 

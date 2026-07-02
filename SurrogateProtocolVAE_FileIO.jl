@@ -2,6 +2,8 @@
 
 # using SurrogateProtocolVAE
 # using ConcurrentSim, ResumableFunctions
+using QuantumSavory
+using QuantumSavory.ProtocolZoo
 import FileIO
 
 function _set_metadata_default_values(metadata::Dict{String,Any})
@@ -37,37 +39,9 @@ function FileIO.save(file_name::String, prot::SurrogateProtocolVAE; metadata::Un
     FileIO.save(FileIO.query(file_name), prot; metadata)
 end
 
-@kwdef struct EntanglementConsumerLogMetadata
-    description::String = ""
-    simulator::String = ""
-    quantumsavory_metadata::Dict{String,Any} = Dict{String,Any}()
-end
-
-@kwdef struct EntanglementConsumerLogSimulationLog
-    time::Vector{Float64} = zeros(Float64,0)
-    state::Matrix{Float64} = zeros(Float64,0,0)
-end
-
-@kwdef struct EntanglementConsumerLog
-    format_version::UInt64 = UInt64(0)
-    format_version_minor::UInt64 = UInt64(0)
-    log_format::String = ""
-    reference_state::String = ""
-    simulation_log::EntanglementConsumerLogSimulationLog = EntanglementConsumerLogSimulationLog()
-    metadata::EntanglementConsumerLogMetadata = EntanglementConsumerLogMetadata()
-end
-
-function load_entanglement_consumer_log(file_name::String)
-    return load_entanglement_consumer_log(FileIO.query(file_name))
-end
-
-function load_entanglement_consumer_log(::Any)
-    return nothing
-end
-
 function load_training_data(training_data_path::String)
     if isfile(training_data_path)
-        consumer_log = load_entanglement_consumer_log(training_data_path)
+        consumer_log = EntanglementConsumerLog(training_data_path)
         training_data = hcat(consumer_log.simulation_log.time, consumer_log.simulation_log.state')
         return [training_data]
     else
@@ -75,7 +49,7 @@ function load_training_data(training_data_path::String)
         training_data = Vector{Matrix{Float64}}(undef, length(file_names))
 
         for sample_id in eachindex(file_names)
-            consumer_log = load_entanglement_consumer_log(file_names[sample_id])
+            consumer_log = EntanglementConsumerLog(file_names[sample_id])
 
             if !isnothing(consumer_log)
                 training_data[sample_id] = hcat(consumer_log.simulation_log.time, consumer_log.simulation_log.state')
