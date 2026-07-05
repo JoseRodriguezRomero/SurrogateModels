@@ -7,7 +7,7 @@ using .SurrogateProtocolVAE
 
 base_dir = @__DIR__() * "/"
 
-fidelity = 0.75
+fidelity = 0.95
 
 sim = Simulation()
 surrogate = SurrogateProtocolVAE.SurrogateProtocolVAE(sim;
@@ -126,11 +126,11 @@ savefig(p, base_dir * "../trained_surrogates/quantum_savory/F_$fidelity.svg")
 p1 = compare_2d_kde_plot(surrogate.training_data[p1_range,:][:], surrogate.training_data[p2_range,:][:], "2D KDE from QuantumSavory Data")
 p2 = compare_2d_kde_plot(sim_data[:,p1_range][:], sim_data[:,p2_range][:], "2D KDE from VAE Surrogate")
 
-plot!(p1,xlims=(0,10),ylims=(0.01,0.06))
-plot!(p2,xlims=(0,10),ylims=(0.01,0.06))
+# plot!(p1,xlims=(0,10),ylims=(0.01,0.06))
+# plot!(p2,xlims=(0,10),ylims=(0.01,0.06))
 
-# plot!(p1,xlims=(0,10),ylims=(0.1,0.5))
-# plot!(p2,xlims=(0,10),ylims=(0.1,0.5))
+plot!(p1,xlims=(0,10),ylims=(0.1,0.5))
+plot!(p2,xlims=(0,10),ylims=(0.1,0.5))
 
 p = plot(p1,p2,layout=(2,1), right_margin = 5mm)
 savefig(p, base_dir * "../trained_surrogates/quantum_savory/2d_kde_F_$fidelity.png")

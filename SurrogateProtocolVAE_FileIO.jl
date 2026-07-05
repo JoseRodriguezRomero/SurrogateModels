@@ -89,14 +89,14 @@ function default_encoder_mid_network(latent_dim::Int, hidden_layer_size::Int = 3
 end
 
 function default_encoder_network(num_inputs::Int, latent_dim::Int, latent_layers::Int, hidden_layer_size::Int = 32)
-    encoder_chains = Vector{Chain}(undef, latent_layers)
-    encoder_chains[1] = default_encoder_final_network(num_inputs, latent_dim, hidden_layer_size)
+    encoders = Vector{Chain}(undef, latent_layers)
+    encoders[1] = default_encoder_final_network(num_inputs, latent_dim, hidden_layer_size)
 
     if latent_layers > 1
-        encoder_chains[2:end] = [default_encoder_mid_network(latent_dim, hidden_layer_size) for _ in 1:(latent_layers-1)]
+        encoders[2:end] = [default_encoder_mid_network(latent_dim, hidden_layer_size) for _ in 1:(latent_layers-1)]
     end
 
-    return encoder_chains
+    return encoders
 end
 
 function default_decoder_final_network(num_inputs::Int, latent_dim::Int, hidden_layer_size::Int = 32)
@@ -122,22 +122,22 @@ function default_decoder_mid_network(latent_dim::Int, hidden_layer_size::Int = 3
 end
 
 function default_decoder_network(num_inputs::Int, latent_dim::Int, latent_layers::Int, hidden_layer_size::Int = 32)
-    decoder_chains = Vector{Chain}(undef, latent_layers)
-    decoder_chains[1] = default_decoder_final_network(num_inputs, latent_dim, hidden_layer_size)
+    decoders = Vector{Chain}(undef, latent_layers)
+    decoders[1] = default_decoder_final_network(num_inputs, latent_dim, hidden_layer_size)
 
     if latent_layers > 1
-        decoder_chains[2:end] = [default_decoder_mid_network(latent_dim, hidden_layer_size) for _ in 1:(latent_layers-1)]
+        decoders[2:end] = [default_decoder_mid_network(latent_dim, hidden_layer_size) for _ in 1:(latent_layers-1)]
     end
 
-    return decoder_chains
+    return decoders
 end
 
 function SurrogateProtocolVAE(
     simulation::Simulation; 
     training_data_path::Union{String, Nothing} = nothing, 
     saved_model::Union{String, Nothing} = nothing, 
-    encoder_chain::Union{Vector{Chain}, Nothing} = nothing, 
-    decoder_chain::Union{Vector{Chain}, Nothing} = nothing, 
+    encoders::Union{Vector{Chain}, Nothing} = nothing, 
+    decoders::Union{Vector{Chain}, Nothing} = nothing, 
     single_shot = false, 
     simulation_window_size::Int = 1, 
     latent_dim::Int = 1, 
@@ -172,27 +172,27 @@ function SurrogateProtocolVAE(
 
     if !isnothing(saved_model)
         autoencoder_parameters = load_variational_autoencoder_parameters(saved_model)
-        encoder_chain = Vector{Chain}(undef, length(autoencoder_parameters.encoders))
-        decoder_chain = Vector{Chain}(undef, length(autoencoder_parameters.decoders))
+        encoders = Vector{Chain}(undef, length(autoencoder_parameters.encoders))
+        decoders = Vector{Chain}(undef, length(autoencoder_parameters.decoders))
 
         for i in eachindex(autoencoder_parameters.encoders)
-            encoder_chain[i] = Chain([layer_parameter(layer) for layer in autoencoder_parameters.encoders[i].layers]...)
+            encoders[i] = Chain([layer_parameter(layer) for layer in autoencoder_parameters.encoders[i].layers]...)
         end
 
         for i in eachindex(autoencoder_parameters.decoders)
-            decoder_chain[i] = Chain([layer_parameter(layer) for layer in autoencoder_parameters.decoders[i].layers]...)
+            decoders[i] = Chain([layer_parameter(layer) for layer in autoencoder_parameters.decoders[i].layers]...)
         end
 
-        latent_dim = size(decoder_chain[1][1].weight)[2]
+        latent_dim = size(decoders[1][1].weight)[2]
     else
-        if isnothing(encoder_chain)
+        if isnothing(encoders)
             num_inputs = maximum([1,size(training_data)[1]])
-            encoder_chain = default_encoder_network(num_inputs,latent_dim,latent_layers)
+            encoders = default_encoder_network(num_inputs,latent_dim,latent_layers)
         end
 
-        if isnothing(decoder_chain)
+        if isnothing(decoders)
             num_inputs = maximum([1,size(training_data)[1]])
-            decoder_chain = default_decoder_network(num_inputs,latent_dim,latent_layers)
+            decoders = default_decoder_network(num_inputs,latent_dim,latent_layers)
         end
     end
 
@@ -202,8 +202,8 @@ function SurrogateProtocolVAE(
         training_data = training_data,
         simulation_window_size = simulation_window_size, 
         latent_dim = latent_dim, 
-        decoder_chain = decoder_chain, 
-        encoder_chain = encoder_chain, 
+        decoders = decoders,
+        encoders = encoders,
         kwargs...
     )
 end

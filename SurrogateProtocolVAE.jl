@@ -37,9 +37,9 @@ $FIELDS
     """Number of latent layers in the encoder and decoder chains of the VAE."""
     latent_layers::Int = 1
     """Decoder chain of the VAE, responsible for generating time-series data from the latent representation."""
-    decoder_chain::Vector{Chain}
+    decoders::Vector{Chain}
     """Encoder chain of the VAE, responsible for encoding time-series data into a latent representation."""
-    encoder_chain::Vector{Chain}
+    encoders::Vector{Chain}
     """Weighting factor for the KL divergence term in the VAE loss function."""
     β::Union{Float64,Vector{Float64}} = 1.0
     """Number of training epochs for the VAE."""
@@ -95,26 +95,26 @@ function _encode(encoders::Vector{Chain}, x, device, latent_dim, num_latent_laye
     return copy(μ_buf), copy(σ_buf), copy(logσ²_buf), copy(z_buf)
 end
 
-function _decode(decoders::Vector{Chain}, z_enc, device, latent_dim, num_latent_layers)
-    batch_size = size(z_enc, 3)
+function _decode(decoders::Vector{Chain}, z, device, latent_dim, num_latent_layers)
+    batch_size = size(z, 3)
     
-    μ_buf = Zygote.Buffer(z_enc, eltype(z_enc), latent_dim, num_latent_layers, batch_size)
-    σ_buf = Zygote.Buffer(z_enc, eltype(z_enc), latent_dim, num_latent_layers, batch_size)
-    logσ²_buf = Zygote.Buffer(z_enc, eltype(z_enc), latent_dim, num_latent_layers, batch_size)
+    μ_buf = Zygote.Buffer(z, eltype(z), latent_dim, num_latent_layers, batch_size)
+    σ_buf = Zygote.Buffer(z, eltype(z), latent_dim, num_latent_layers, batch_size)
+    logσ²_buf = Zygote.Buffer(z, eltype(z), latent_dim, num_latent_layers, batch_size)
 
-    μ_buf[:, num_latent_layers, :] = zeros(eltype(z_enc), latent_dim, batch_size) |> device
-    σ_buf[:, num_latent_layers, :] = ones(eltype(z_enc), latent_dim, batch_size) |> device
-    logσ²_buf[:, num_latent_layers, :] = zeros(eltype(z_enc), latent_dim, batch_size) |> device
+    μ_buf[:, num_latent_layers, :] = zeros(eltype(z), latent_dim, batch_size) |> device
+    σ_buf[:, num_latent_layers, :] = ones(eltype(z), latent_dim, batch_size) |> device
+    logσ²_buf[:, num_latent_layers, :] = zeros(eltype(z), latent_dim, batch_size) |> device
 
     for i in 2:num_latent_layers
         idx = num_latent_layers - i + 1
-        dec_out = decoders[idx+1](z_enc[:, idx+1, :])
+        dec_out = decoders[idx+1](z[:, idx+1, :])
         μ_buf[:, idx, :] = dec_out[1:latent_dim, :]
         logσ²_buf[:, idx, :] = dec_out[(latent_dim+1):end, :]
         σ_buf[:, idx, :] = exp.(logσ²_buf[:, idx, :] .* 0.5f0)
     end
 
-    x̂ = decoders[1](z_enc[:, 1, :])
+    x̂ = decoders[1](z[:, 1, :])
     return copy(μ_buf), copy(σ_buf), copy(logσ²_buf), x̂
 end
 
@@ -123,8 +123,8 @@ function vae_loss(model::VariationalAutoencoder, input_weights, x)
     latent_dim = size(model.decoders[1][1].weight, 2)
     num_latent_layers = length(model.decoders)
 
-    μ_enc, σ_enc, logσ²_enc, z_enc = _encode(model.encoders, x, model.device, latent_dim, num_latent_layers)
-    μ_dec, σ_dec, logσ²_dec, x̂ = _decode(model.decoders, z_enc, model.device, latent_dim, num_latent_layers)
+    μ_enc, σ_enc, logσ²_enc, z = _encode(model.encoders, x, model.device, latent_dim, num_latent_layers)
+    μ_dec, σ_dec, logσ²_dec, x̂ = _decode(model.decoders, z, model.device, latent_dim, num_latent_layers)
 
     recon_loss = 0.5f0 .* sum(input_weights .* ((x .- x̂).^2))   
     kl_loss = 0.5f0 .* sum(logσ²_dec .- logσ²_enc .+ (σ_enc.^2 .+ (μ_enc .- μ_dec).^2) ./ σ_dec.^2 .- 1.0f0)
@@ -134,8 +134,8 @@ end
 
 function _train!(protocol::SurrogateProtocolVAE, β::Number)
     model = VariationalAutoencoder(
-        protocol.encoder_chain, 
-        protocol.decoder_chain, 
+        protocol.encoders, 
+        protocol.decoders, 
         β,
         protocol.device
     )
@@ -199,24 +199,24 @@ end
 end
 
 function decode(protocol::SurrogateProtocolVAE, z)
-    num_latent_layers = length(protocol.decoder_chain)
+    num_latent_layers = length(protocol.decoders)
 
     for i in 1:(num_latent_layers-1)
-        dec_out = protocol.decoder_chain[num_latent_layers-i+1](z)
+        dec_out = protocol.decoders[num_latent_layers-i+1](z)
         z = sample_latent(dec_out[1:protocol.latent_dim], exp.(dec_out[(protocol.latent_dim+1):end] .* 0.5f0), protocol.device)
     end
 
-    return protocol.decoder_chain[1](z) |> protocol.device
+    return protocol.decoders[1](z) |> protocol.device
 end
 
 function encode(protocol::SurrogateProtocolVAE, x)
-    num_latent_layers = length(protocol.encoder_chain)
+    num_latent_layers = length(protocol.encoders)
 
-    enc_out = protocol.encoder_chain[1](x)
+    enc_out = protocol.encoders[1](x)
     z = sample_latent(enc_out[1:protocol.latent_dim,:], exp.(enc_out[(protocol.latent_dim+1):end,:] .* 0.5f0), protocol.device)
     
     for i in 2:num_latent_layers
-        enc_out = protocol.encoder_chain[i](z)
+        enc_out = protocol.encoders[i](z)
         z = sample_latent(enc_out[1:protocol.latent_dim,:], exp.(enc_out[(protocol.latent_dim+1):end,:] .* 0.5f0), protocol.device)
     end
 
@@ -317,8 +317,8 @@ end
 
 function variational_autoencoder_parameters(prot::SurrogateProtocolVAE)
     return VariationalAutoencoderParameters(
-        [chain_parameters(encoder) for encoder in prot.encoder_chain],
-        [chain_parameters(decoder) for decoder in prot.decoder_chain]
+        [chain_parameters(encoder) for encoder in prot.encoders],
+        [chain_parameters(decoder) for decoder in prot.decoders]
     )
 end
 
