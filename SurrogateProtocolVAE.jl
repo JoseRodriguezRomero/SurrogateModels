@@ -132,7 +132,12 @@ function vae_loss(model::VariationalAutoencoder, input_weights, x)
     return (recon_loss + model.β * kl_loss) / batch_size
 end
 
-function _train!(protocol::SurrogateProtocolVAE, β::Number)
+struct VAETrainingLog
+    loss::Vector{Float64}
+    loss_grad_norm::Vector{Float64}
+end
+
+function _train!(protocol::SurrogateProtocolVAE, β::Number; print_log::Bool = true)
     model = VariationalAutoencoder(
         protocol.encoders, 
         protocol.decoders, 
@@ -156,7 +161,12 @@ function _train!(protocol::SurrogateProtocolVAE, β::Number)
     input_weights[input_weights .> 1.0E9] .= 0.0 # ignore nearly deterministic inputs
     input_weights_device = input_weights |> protocol.device
 
-    println("Training VAE... (β = $β)")
+    training_log = VAETrainingLog(
+        zeros(Float64,protocol.epochs),
+        zeros(Float64,protocol.epochs)
+    )
+
+    if print_log; println("Training VAE... (β = $β)") end
     for epoch in 1:protocol.epochs
         epoch_loss = 0f0
         total_grad_norm = 0f0
@@ -174,23 +184,31 @@ function _train!(protocol::SurrogateProtocolVAE, β::Number)
             total_grad_norm += batch_grad_norm
         end
 
+        training_log.loss[epoch] = epoch_loss / length(loader)
+        training_log.loss_grad_norm[epoch] = total_grad_norm / length(loader)
+
         if epoch % 5 == 0 || epoch == 1
-            average_loss = epoch_loss / length(loader)
-            average_grad_norm = total_grad_norm / length(loader)
-            println("Epoch $epoch | Average Loss: $average_loss | Grad Norm: $average_grad_norm")
+            average_loss = training_log.loss[epoch]
+            average_grad_norm = training_log.loss_grad_norm[epoch]
+            if print_log; println("Epoch $epoch | Average Loss: $average_loss | Grad Norm: $average_grad_norm") end
         end
     end
-    println("Training complete!")
+    if print_log; println("Training complete!") end
+
+    return training_log
 end
 
-function _train!(protocol::SurrogateProtocolVAE, β::Vector)
+function _train!(protocol::SurrogateProtocolVAE, β::Vector; print_log::Bool = true)
+    training_log = nothing
     for i in eachindex(β)
-        _train!(protocol,Float64(β[i]) |> protocol.device)
+        training_log = _train!(protocol,Float64(β[i]) |> protocol.device; print_log = print_log)
     end
+
+    return training_log
 end
 
-function train!(protocol::SurrogateProtocolVAE)
-    _train!(protocol, protocol.β)
+function train!(protocol::SurrogateProtocolVAE; print_log::Bool = true)
+    return _train!(protocol, protocol.β; print_log = print_log)
 end
 
 @resumable function (protocol::SurrogateProtocolVAE)()

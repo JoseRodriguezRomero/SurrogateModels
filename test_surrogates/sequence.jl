@@ -5,19 +5,6 @@ include("../SurrogateProtocolVAE.jl")
 
 using .SurrogateProtocolVAE
 
-base_dir = @__DIR__() * "/"
-swap_prob = 0.8
-
-sim = Simulation()
-surrogate = SurrogateProtocolVAE.SurrogateProtocolVAE(sim;
-    single_shot = true,
-    training_data_path = base_dir *  "../sequence_data/linear_17_swap_prob=$swap_prob.h5", 
-    saved_model = base_dir * "../trained_surrogates/sequence/linear_17_swap_prob=$swap_prob.h5"
-)
-
-num_vae_samples = 125000
-@time sim_data = surrogate(num_vae_samples)
-
 function compare_kde_plot(vae_sim::Vector, ground_truth::Vector)
     vae_kde = kde(vae_sim)
     vae_kde = InterpKDE(vae_kde)
@@ -29,7 +16,7 @@ function compare_kde_plot(vae_sim::Vector, ground_truth::Vector)
 
     x0 = minimum(ground_truth)
     x1 = maximum(ground_truth)
-    dx = (x1-x0) / 300.0
+    dx = (x1-x0) / 400.0
     plt_range = collect(x0:dx:x1)
 
     p = histogram(ground_truth, normalize=:pdf, label="SeQUeNCe simulated data")
@@ -103,39 +90,56 @@ function compare_latent_variables(protocol::SurrogateProtocolVAE.SurrogateProtoc
     return p
 end
 
-simulation_window = surrogate.simulation_window_size
-p1_range = (0*simulation_window+1):(1*simulation_window)
-p2_range = (1*simulation_window+1):(2*simulation_window)
+base_dir = @__DIR__() * "/"
 
-p1 = compare_kde_plot(sim_data[:,p1_range][:], surrogate.training_data[p1_range,:][:])
-plot!(p1, ylabel="Probability\nDensity")
-plot!(p1, xlabel="Time to serve [ms]")
+for swap_prob in [0.8, 0.9]
+    for num_latent_layers in 1:4
+        save_dir = base_dir * "../trained_surrogates/sequence/linear_17_swap_prob=$swap_prob/latent_layers_$num_latent_layers/"
 
-p2 = compare_kde_plot(sim_data[:,p2_range][:], surrogate.training_data[p2_range,:][:])
-plot!(p2, ylabel="Probability\nDensity")
-plot!(p2, xlabel="Fidelity")
-plot!(p2, legend=false)
+        sim = Simulation()
+        surrogate = SurrogateProtocolVAE.SurrogateProtocolVAE(sim;
+            single_shot = true,
+            training_data_path = base_dir *  "../sequence_data/linear_17_swap_prob=$swap_prob.h5", 
+            saved_model = save_dir * "linear_17_swap_prob=$swap_prob.h5"
+        )
 
-p = plot(p1,p2,layout=(2,1))
-savefig(p, base_dir * "../trained_surrogates/sequence/linear_17_swap_prob=$swap_prob.png")
-savefig(p, base_dir * "../trained_surrogates/sequence/linear_17_swap_prob=$swap_prob.pdf")
-savefig(p, base_dir * "../trained_surrogates/sequence/linear_17_swap_prob=$swap_prob.svg")
-display(p)
+        num_vae_samples = 125000
+        @time sim_data = surrogate(num_vae_samples)
 
-p1 = compare_2d_kde_plot(surrogate.training_data[p1_range,:][:], surrogate.training_data[p2_range,:][:], "2D KDE from SeQUeNCe Data")
-p2 = compare_2d_kde_plot(sim_data[:,p1_range][:], sim_data[:,p2_range][:], "2D KDE from VAE Surrogate")
+        simulation_window = surrogate.simulation_window_size
+        p1_range = (0*simulation_window+1):(1*simulation_window)
+        p2_range = (1*simulation_window+1):(2*simulation_window)
 
-plot!(p1,xlims=(12,80),ylims=(0.43,0.48))
-plot!(p2,xlims=(12,80),ylims=(0.43,0.48))
+        p1 = compare_kde_plot(sim_data[:,p1_range][:], surrogate.training_data[p1_range,:][:])
+        plot!(p1, ylabel="Probability\nDensity")
+        plot!(p1, xlabel="Time to serve [ms]")
 
-p = plot(p1,p2,layout=(2,1), right_margin = 5mm)
-savefig(p, base_dir * "../trained_surrogates/sequence/2d_kde_linear_17_swap_prob=$swap_prob.png")
-savefig(p, base_dir * "../trained_surrogates/sequence/2d_kde_linear_17_swap_prob=$swap_prob.pdf")
-savefig(p, base_dir * "../trained_surrogates/sequence/2d_kde_linear_17_swap_prob=$swap_prob.svg")
-display(p)
+        p2 = compare_kde_plot(sim_data[:,p2_range][:], surrogate.training_data[p2_range,:][:])
+        plot!(p2, ylabel="Probability\nDensity")
+        plot!(p2, xlabel="Fidelity")
+        plot!(p2, legend=false)
 
-p = compare_latent_variables(surrogate)
-savefig(p, base_dir * "../trained_surrogates/sequence/latent_comp_linear_17_swap_prob=$swap_prob.png")
-savefig(p, base_dir * "../trained_surrogates/sequence/latent_comp_linear_17_swap_prob=$swap_prob.pdf")
-savefig(p, base_dir * "../trained_surrogates/sequence/latent_comp_linear_17_swap_prob=$swap_prob.svg")
+        p = plot(p1,p2,layout=(2,1))
+        savefig(p, save_dir * "linear_17_swap_prob=$swap_prob.png")
+        savefig(p, save_dir * "linear_17_swap_prob=$swap_prob.pdf")
+        savefig(p, save_dir * "linear_17_swap_prob=$swap_prob.svg")
+
+        p1 = compare_2d_kde_plot(surrogate.training_data[p1_range,:][:], surrogate.training_data[p2_range,:][:], "2D KDE from SeQUeNCe Data")
+        p2 = compare_2d_kde_plot(sim_data[:,p1_range][:], sim_data[:,p2_range][:], "2D KDE from VAE Surrogate")
+
+        plot!(p1,xlims=(12,80),ylims=(0.43,0.48))
+        plot!(p2,xlims=(12,80),ylims=(0.43,0.48))
+
+        p = plot(p1,p2,layout=(2,1), right_margin = 5mm)
+        savefig(p, save_dir * "2d_kde_linear_17_swap_prob=$swap_prob.png")
+        savefig(p, save_dir * "2d_kde_linear_17_swap_prob=$swap_prob.pdf")
+        savefig(p, save_dir * "2d_kde_linear_17_swap_prob=$swap_prob.svg")
+
+        p = compare_latent_variables(surrogate)
+        savefig(p, save_dir * "latent_comp_linear_17_swap_prob=$swap_prob.png")
+        savefig(p, save_dir * "latent_comp_linear_17_swap_prob=$swap_prob.pdf")
+        savefig(p, save_dir * "latent_comp_linear_17_swap_prob=$swap_prob.svg")
+    end
+end
+
 
