@@ -150,13 +150,14 @@ function _train!(protocol::SurrogateProtocolVAE, β::Number; print_log::Bool = t
         protocol.device
     )
     model_train_device = model |> protocol.device
-    opt_state = Flux.setup(protocol.optimiser, model_train_device)
-
-    training_data_on_device = Float64.(protocol.training_data) |> protocol.device
+    batchsize_device = protocol.batchsize |> protocol.device
+    shuffle_device = protocol.shuffle |> protocol.device
+    training_data_device = Float64.(protocol.training_data) |> protocol.device
+    
     loader = Flux.DataLoader(
-        training_data_on_device, 
-        batchsize=protocol.batchsize, 
-        shuffle=protocol.shuffle,
+        training_data_device, 
+        batchsize = batchsize_device, 
+        shuffle = shuffle_device,
         parallel=true
     )
 
@@ -173,6 +174,15 @@ function _train!(protocol::SurrogateProtocolVAE, β::Number; print_log::Bool = t
     for epoch in 1:protocol.epochs
         epoch_loss = 0f0
         total_grad_norm = 0f0
+
+        if epoch % 100 == 0
+            loader = Flux.DataLoader(
+                shuffleobs(training_data_device), 
+                batchsize = batchsize_device, 
+                shuffle = shuffle_device,
+                parallel=true
+            )
+        end
 
         for x_batch in loader
             loss, grads = Flux.withgradient(model_train_device) do m
@@ -197,6 +207,15 @@ function _train!(protocol::SurrogateProtocolVAE, β::Number; print_log::Bool = t
         end
     end
     if print_log; println("Training complete!") end
+
+    model = model_train_device |> cpu_device()
+    for i in eachindex(protocol.encoders)
+        Flux.loadmodel!(protocol.encoders[i], model.encoders[i])
+    end
+
+    for i in eachindex(protocol.decoders)
+        Flux.loadmodel!(protocol.decoders[i], model.decoders[i])
+    end
 
     return training_log
 end
