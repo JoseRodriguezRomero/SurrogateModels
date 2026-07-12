@@ -1,10 +1,18 @@
 using ConcurrentSim, Flux, FileIO
 using DataFrames, CSV
-using Base.Threads
 
 include("../SurrogateProtocolVAE.jl")
 
 using .SurrogateProtocolVAE
+
+device = cpu_device()
+
+try
+    using CUDA, cuDNN
+    global device = gpu_device()
+catch
+    println("No CUDA support detected! Using CPU as compute device.")
+end
 
 function save_log_to_csv(file_name, training_log)
     df = DataFrame(:loss => training_log.loss, :grad_norm => training_log.loss_grad_norm)
@@ -32,10 +40,11 @@ for fidelity in [0.75, 0.95]
             simulation_window_size = 1,
             latent_dim = 3,
             latent_layers = latent_layers,
-            batchsize = 512,
+            batchsize = 8192,
             epochs = 5000, 
             β = [0.1],
-            optimiser = Adam(;eta = 1.0E-3, beta = (0.95,0.999))
+            optimiser = Adam(;eta = 1.0E-3, beta = (0.95,0.999)),
+            device = device
         )
         training_log = SurrogateProtocolVAE.train!(surrogate)
         save(save_path, surrogate)

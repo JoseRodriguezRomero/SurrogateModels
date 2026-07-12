@@ -62,13 +62,13 @@ $FIELDS
 end
 
 struct VariationalAutoencoder
-    encoders::Tuple{Chain}
-    decoders::Tuple{Chain}
+    encoders::Tuple
+    decoders::Tuple
     β::Float64
     device::Flux.MLDataDevices.AbstractDevice
 end
 
-function VariationalAutoencoder(encoders::Vector{Chain}, decoders::Vector{Chain}, β::Float64, device::Flux.MLDataDevices.AbstractDevice)
+function VariationalAutoencoder(encoders::Vector, decoders::Vector, β::Float64, device::Flux.MLDataDevices.AbstractDevice)
     return VariationalAutoencoder(
         Tuple(encoders),
         Tuple(decoders),
@@ -84,7 +84,7 @@ function sample_latent(μ, σ)
     return μ .+ σ .* ϵ
 end
 
-function _encode(encoders::Tuple{Chain}, x, latent_dim, num_latent_layers)
+function _encode(encoders::Tuple, x, latent_dim, num_latent_layers)
     batch_size = size(x, 2)
     
     μ_buf = Zygote.Buffer(x, eltype(x), latent_dim, num_latent_layers, batch_size)
@@ -109,7 +109,7 @@ function _encode(encoders::Tuple{Chain}, x, latent_dim, num_latent_layers)
     return copy(μ_buf), copy(σ_buf), copy(logσ²_buf), copy(z_buf)
 end
 
-function _decode(decoders::Tuple{Chain}, z, latent_dim, num_latent_layers)
+function _decode(decoders::Tuple, z, latent_dim, num_latent_layers)
     batch_size = size(z, 3)
     
     μ_buf = Zygote.Buffer(z, eltype(z), latent_dim, num_latent_layers, batch_size)
@@ -233,7 +233,7 @@ function decode(protocol::SurrogateProtocolVAE, z)
 
     for i in 1:(num_latent_layers-1)
         dec_out = protocol.decoders[num_latent_layers-i+1](z)
-        z = sample_latent(dec_out[1:protocol.latent_dim], exp.(dec_out[(protocol.latent_dim+1):end] .* 0.5f0), protocol.device)
+        z = sample_latent(dec_out[1:protocol.latent_dim], exp.(dec_out[(protocol.latent_dim+1):end] .* 0.5f0))
     end
 
     return protocol.decoders[1](z) |> protocol.device
@@ -243,11 +243,11 @@ function encode(protocol::SurrogateProtocolVAE, x)
     num_latent_layers = length(protocol.encoders)
 
     enc_out = protocol.encoders[1](x)
-    z = sample_latent(enc_out[1:protocol.latent_dim,:], exp.(enc_out[(protocol.latent_dim+1):end,:] .* 0.5f0), protocol.device)
+    z = sample_latent(enc_out[1:protocol.latent_dim,:], exp.(enc_out[(protocol.latent_dim+1):end,:] .* 0.5f0))
     
     for i in 2:num_latent_layers
         enc_out = protocol.encoders[i](z)
-        z = sample_latent(enc_out[1:protocol.latent_dim,:], exp.(enc_out[(protocol.latent_dim+1):end,:] .* 0.5f0), protocol.device)
+        z = sample_latent(enc_out[1:protocol.latent_dim,:], exp.(enc_out[(protocol.latent_dim+1):end,:] .* 0.5f0))
     end
 
     return z
