@@ -175,9 +175,9 @@ function _train!(protocol::SurrogateProtocolVAE, β::Number; print_log::Bool = t
         epoch_loss = 0f0
         total_grad_norm = 0f0
 
-        if epoch % 100 == 0
+        if epoch % 100 == 0 && protocol.shuffle
             loader = Flux.DataLoader(
-                shuffleobs(training_data_device), 
+                training_data_device, 
                 batchsize = batchsize_device, 
                 shuffle = shuffle_device,
                 parallel=true
