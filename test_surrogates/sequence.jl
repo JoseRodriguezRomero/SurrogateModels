@@ -90,6 +90,13 @@ function compare_latent_variables(protocol::SurrogateProtocolVAE.SurrogateProtoc
     return p
 end
 
+function plot_train_loss(file_name::String)
+    data = CSV.read(file_name, DataFrame)
+    p = plot(data.loss, xlabel="Epochs", xaxis=:log, yaxis=:log, frame=:box, label="-ELBO")
+    plot!(data.grad_norm, xlabel="Epochs", xaxis=:log, yaxis=:log, frame=:box, label="-ELBO norm")
+    return p
+end
+
 base_dir = @__DIR__() * "/"
 
 for swap_prob in [0.8, 0.9]
@@ -139,6 +146,12 @@ for swap_prob in [0.8, 0.9]
         savefig(p, save_dir * "latent_comp_linear_17_swap_prob=$swap_prob.png")
         savefig(p, save_dir * "latent_comp_linear_17_swap_prob=$swap_prob.pdf")
         savefig(p, save_dir * "latent_comp_linear_17_swap_prob=$swap_prob.svg")
+
+        p = plot_train_loss(save_dir * "linear_17_swap_prob=$swap_prob.csv")
+        savefig(p, save_dir * "ELBO_training.png")
+        savefig(p, save_dir * "ELBO_training.pdf")
+        savefig(p, save_dir * "ELBO_training.svg")
+
     end
 end
 

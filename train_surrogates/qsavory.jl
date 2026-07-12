@@ -49,6 +49,13 @@ for fidelity in [0.75, 0.95]
         training_log = SurrogateProtocolVAE.train!(surrogate)
         save(save_path, surrogate)
         save_log_to_csv(training_log_save_path, training_log)
+
+        try
+            for i in 1:5
+                CUDA.reclaim()
+            end
+        catch
+        end
     end
 end
 

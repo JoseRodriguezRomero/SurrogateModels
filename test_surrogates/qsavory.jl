@@ -1,4 +1,5 @@
 using ConcurrentSim, Plots, KernelDensity, Distributions, Measures
+using CSV, DataFrames
 using LaTeXStrings
 
 include("../SurrogateProtocolVAE.jl")
@@ -91,6 +92,13 @@ function compare_latent_variables(protocol::SurrogateProtocolVAE.SurrogateProtoc
     return p
 end
 
+function plot_train_loss(file_name::String)
+    data = CSV.read(file_name, DataFrame)
+    p = plot(data.loss, xlabel="Epochs", xaxis=:log, yaxis=:log, frame=:box, label="-ELBO")
+    plot!(data.grad_norm, xlabel="Epochs", xaxis=:log, yaxis=:log, frame=:box, label="-ELBO norm")
+    return p
+end
+
 base_dir = @__DIR__() * "/"
 
 for fidelity in [0.75, 0.95]
@@ -145,6 +153,11 @@ for fidelity in [0.75, 0.95]
         savefig(p, save_dir * "latent_comp_F_$fidelity.png")
         savefig(p, save_dir * "latent_comp_F_$fidelity.svg")
         savefig(p, save_dir * "latent_comp_F_$fidelity.pdf")
+
+        p = plot_train_loss(save_dir * "F_$fidelity.csv")
+        savefig(p, save_dir * "ELBO_training.pdf")
+        savefig(p, save_dir * "ELBO_training.svg")
+        savefig(p, save_dir * "ELBO_training.png")
     end
 end
 

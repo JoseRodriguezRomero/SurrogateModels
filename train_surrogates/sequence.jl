@@ -38,19 +38,26 @@ for swap_prob in all_swap_prob
         surrogate = SurrogateProtocolVAE.SurrogateProtocolVAE(sim;
             single_shot = true,
             training_data_path = training_data_path,
-            # saved_model = save_path,
+            saved_model = save_path,
             simulation_window_size = 1,
             latent_dim = 2,
             latent_layers = latent_layers,
-            batchsize = 8192,
-            epochs = 7500, 
+            batchsize = 2048,
+            epochs = 2500, 
             β = [0.1],
-            optimiser = Adam(;eta = 1.0E-4, beta = (0.9,0.999)),
+            optimiser = Adam(;eta = 1.0E-3, beta = (0.999,0.9999)),
             device = device
         )
         training_log = SurrogateProtocolVAE.train!(surrogate)
         save(save_path, surrogate)
         save_log_to_csv(training_log_save_path, training_log)
+
+        try
+            for i in 1:5
+                CUDA.reclaim()
+            end
+        catch
+        end
     end
 end
 
