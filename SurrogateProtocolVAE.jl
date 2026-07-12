@@ -3,6 +3,7 @@ module SurrogateProtocolVAE
 using Flux
 using Random
 using Zygote
+using MLUtils
 using Functors
 using Statistics
 using Distributions
@@ -42,9 +43,9 @@ $FIELDS
     """Number of latent layers in the encoder and decoder chains of the VAE."""
     latent_layers::Int = 1
     """Encoder chain of the VAE, responsible for encoding time-series data into a latent representation."""
-    encoders::Tuple{Chain}
+    encoders::Tuple{Vararg{Chain}} 
     """Decoder chain of the VAE, responsible for generating time-series data from the latent representation."""
-    decoders::Tuple{Chain}
+    decoders::Tuple{Vararg{Chain}}
     """Weighting factor for the KL divergence term in the VAE loss function."""
     β::Union{Float64,Vector{Float64}} = 1.0
     """Number of training epochs for the VAE."""
@@ -150,15 +151,15 @@ function _train!(protocol::SurrogateProtocolVAE, β::Number; print_log::Bool = t
         protocol.device
     )
     model_train_device = model |> protocol.device
+    opt_state = Flux.setup(protocol.optimiser, model_train_device)
     batchsize_device = protocol.batchsize |> protocol.device
-    shuffle_device = protocol.shuffle |> protocol.device
     training_data_device = Float64.(protocol.training_data) |> protocol.device
     
     loader = Flux.DataLoader(
         training_data_device, 
         batchsize = batchsize_device, 
-        shuffle = shuffle_device,
-        parallel=true
+        shuffle = false,
+        parallel = true
     )
 
     input_weights = [1.0 / var(protocol.training_data[i,:]) for i in 1:size(protocol.training_data,1)]
@@ -177,10 +178,10 @@ function _train!(protocol::SurrogateProtocolVAE, β::Number; print_log::Bool = t
 
         if epoch % 100 == 0 && protocol.shuffle
             loader = Flux.DataLoader(
-                training_data_device, 
+                shuffleobs(training_data_device), 
                 batchsize = batchsize_device, 
-                shuffle = shuffle_device,
-                parallel=true
+                shuffle = false,
+                parallel = true
             )
         end
 
@@ -189,8 +190,8 @@ function _train!(protocol::SurrogateProtocolVAE, β::Number; print_log::Bool = t
                 vae_loss(m, input_weights_device, x_batch)
             end
 
-            flat_grads, _ = Flux.destructure(grads[1])
-            batch_grad_norm = sqrt(sum(abs2, flat_grads))
+            raw_gradient_arrays = Optimisers.trainables(grads[1])
+            batch_grad_norm = sqrt(sum(sum(abs2, g) for g in raw_gradient_arrays if g isa AbstractArray))
 
             Flux.update!(opt_state, model_train_device, grads[1])
             epoch_loss += loss
