@@ -100,22 +100,40 @@ function default_encoder_network(num_inputs::Int, latent_dim::Int, latent_layers
 end
 
 function default_decoder_final_network(num_inputs::Int, latent_dim::Int, hidden_layer_size::Int = 32)
+    # return Chain(
+    #     Dense(latent_dim, hidden_layer_size, swish),
+    #     Dense(hidden_layer_size, hidden_layer_size, sigmoid),
+    #     Dense(hidden_layer_size, hidden_layer_size, swish),
+    #     Dense(hidden_layer_size, hidden_layer_size, sigmoid),
+    #     Dense(hidden_layer_size, hidden_layer_size, swish),
+    #     Dense(hidden_layer_size, num_inputs)
+    # ) |> f64
+
     return Chain(
         Dense(latent_dim, hidden_layer_size, swish),
-        Dense(hidden_layer_size, hidden_layer_size, sigmoid),
         Dense(hidden_layer_size, hidden_layer_size, swish),
-        Dense(hidden_layer_size, hidden_layer_size, sigmoid),
+        Dense(hidden_layer_size, hidden_layer_size, swish),
+        Dense(hidden_layer_size, hidden_layer_size, swish),
         Dense(hidden_layer_size, hidden_layer_size, swish),
         Dense(hidden_layer_size, num_inputs)
     ) |> f64
 end
 
 function default_decoder_mid_network(latent_dim::Int, hidden_layer_size::Int = 32)
+    # return Chain(
+    #     Dense(latent_dim, hidden_layer_size, swish),
+    #     Dense(hidden_layer_size, hidden_layer_size, sigmoid),
+    #     Dense(hidden_layer_size, hidden_layer_size, swish),
+    #     Dense(hidden_layer_size, hidden_layer_size, sigmoid),
+    #     Dense(hidden_layer_size, hidden_layer_size, swish),
+    #     Dense(hidden_layer_size, 2*latent_dim)
+    # ) |> f64
+
     return Chain(
         Dense(latent_dim, hidden_layer_size, swish),
-        Dense(hidden_layer_size, hidden_layer_size, sigmoid),
         Dense(hidden_layer_size, hidden_layer_size, swish),
-        Dense(hidden_layer_size, hidden_layer_size, sigmoid),
+        Dense(hidden_layer_size, hidden_layer_size, swish),
+        Dense(hidden_layer_size, hidden_layer_size, swish),
         Dense(hidden_layer_size, hidden_layer_size, swish),
         Dense(hidden_layer_size, 2*latent_dim)
     ) |> f64

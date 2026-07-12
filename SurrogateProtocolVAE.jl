@@ -5,7 +5,6 @@ using Random
 using Zygote
 using Functors
 using Statistics
-using ForwardDiff
 using Distributions
 using LinearAlgebra
 using QuantumSavory
@@ -19,7 +18,13 @@ abstract type AbstractProtocol end
 """
 $TYPEDEF
 
-A protocol simulating the behavior of a quantum network, trained using a variational autoencoder (VAE) architecture. The VAE is designed to learn a latent representation of the protocol's behavior based on training data consisting of time-series data of observables from the quantum network simulations. The surrogate protocol can then be used to generate new time-series data that mimics the behavior of the original protocol, allowing for faster simulations and analysis.
+A protocol simulating the behavior of a quantum network, trained using a 
+variational autoencoder (VAE) architecture. The VAE is designed to learn a 
+latent representation of the protocol's behavior based on training data 
+consisting of time-series data of observables from the quantum network 
+simulations. The surrogate protocol can then be used to generate new time-series 
+data that mimics the behavior of the original protocol, allowing for faster 
+simulations and analysis.
 
 $FIELDS
 """
@@ -57,20 +62,29 @@ $FIELDS
 end
 
 struct VariationalAutoencoder
-    encoders::Vector{Chain}
-    decoders::Vector{Chain}
+    encoders::Tuple{Chain}
+    decoders::Tuple{Chain}
     β::Float64
     device::Flux.MLDataDevices.AbstractDevice
 end
 
+function VariationalAutoencoder(encoders::Vector{Chain}, decoders::Vector{Chain}, β::Float64, device::Flux.MLDataDevices.AbstractDevice)
+    return VariationalAutoencoder(
+        Tuple(encoders),
+        Tuple(decoders),
+        β,
+        device
+    )
+end
+
 Functors.@functor VariationalAutoencoder (encoders, decoders)
 
-function sample_latent(μ, σ, device)
-    ϵ = randn(eltype(μ), size(μ)) |> device
+function sample_latent(μ, σ)
+    ϵ = Flux.randn_like(μ, size(μ))
     return μ .+ σ .* ϵ
 end
 
-function _encode(encoders::Vector{Chain}, x, device, latent_dim, num_latent_layers)
+function _encode(encoders::Tuple{Chain}, x, latent_dim, num_latent_layers)
     batch_size = size(x, 2)
     
     μ_buf = Zygote.Buffer(x, eltype(x), latent_dim, num_latent_layers, batch_size)
@@ -82,29 +96,29 @@ function _encode(encoders::Vector{Chain}, x, device, latent_dim, num_latent_laye
     μ_buf[:, 1, :] = enc_out[1:latent_dim, :]
     logσ²_buf[:, 1, :] = enc_out[(latent_dim+1):end, :]
     σ_buf[:, 1, :] = exp.(logσ²_buf[:, 1, :] .* 0.5f0)
-    z_buf[:, 1, :] = sample_latent(μ_buf[:, 1, :], σ_buf[:, 1, :], device)
+    z_buf[:, 1, :] = sample_latent(μ_buf[:, 1, :], σ_buf[:, 1, :])
 
     for i in 2:num_latent_layers
         enc_out = encoders[i](z_buf[:, i-1, :])
         μ_buf[:, i, :] = enc_out[1:latent_dim, :]
         logσ²_buf[:, i, :] = enc_out[(latent_dim+1):end, :]
         σ_buf[:, i, :] = exp.(logσ²_buf[:, i, :] .* 0.5f0)
-        z_buf[:, i, :] = sample_latent(μ_buf[:, i, :], σ_buf[:, i, :], device)
+        z_buf[:, i, :] = sample_latent(μ_buf[:, i, :], σ_buf[:, i, :])
     end
 
     return copy(μ_buf), copy(σ_buf), copy(logσ²_buf), copy(z_buf)
 end
 
-function _decode(decoders::Vector{Chain}, z, device, latent_dim, num_latent_layers)
+function _decode(decoders::Tuple{Chain}, z, latent_dim, num_latent_layers)
     batch_size = size(z, 3)
     
     μ_buf = Zygote.Buffer(z, eltype(z), latent_dim, num_latent_layers, batch_size)
     σ_buf = Zygote.Buffer(z, eltype(z), latent_dim, num_latent_layers, batch_size)
     logσ²_buf = Zygote.Buffer(z, eltype(z), latent_dim, num_latent_layers, batch_size)
 
-    μ_buf[:, num_latent_layers, :] = zeros(eltype(z), latent_dim, batch_size) |> device
-    σ_buf[:, num_latent_layers, :] = ones(eltype(z), latent_dim, batch_size) |> device
-    logσ²_buf[:, num_latent_layers, :] = zeros(eltype(z), latent_dim, batch_size) |> device
+    μ_buf[:, num_latent_layers, :] = Flux.zeros_like(z, (latent_dim, batch_size))
+    σ_buf[:, num_latent_layers, :] = Flux.ones_like(z, (latent_dim, batch_size))
+    logσ²_buf[:, num_latent_layers, :] = Flux.zeros_like(z, (latent_dim, batch_size))
 
     for i in 2:num_latent_layers
         idx = num_latent_layers - i + 1
@@ -123,8 +137,8 @@ function vae_loss(model::VariationalAutoencoder, input_weights, x)
     latent_dim = size(model.decoders[1][1].weight, 2)
     num_latent_layers = length(model.decoders)
 
-    μ_enc, σ_enc, logσ²_enc, z = _encode(model.encoders, x, model.device, latent_dim, num_latent_layers)
-    μ_dec, σ_dec, logσ²_dec, x̂ = _decode(model.decoders, z, model.device, latent_dim, num_latent_layers)
+    μ_enc, σ_enc, logσ²_enc, z = _encode(model.encoders, x, latent_dim, num_latent_layers)
+    μ_dec, σ_dec, logσ²_dec, x̂ = _decode(model.decoders, z, latent_dim, num_latent_layers)
 
     recon_loss = 0.5f0 .* sum(input_weights .* ((x .- x̂).^2))   
     kl_loss = 0.5f0 .* sum(logσ²_dec .- logσ²_enc .+ (σ_enc.^2 .+ (μ_enc .- μ_dec).^2) ./ σ_dec.^2 .- 1.0f0)
@@ -154,8 +168,6 @@ function _train!(protocol::SurrogateProtocolVAE, β::Number; print_log::Bool = t
         shuffle=protocol.shuffle,
         parallel=true
     )
-
-    BLAS.set_num_threads(1)
 
     input_weights = [1.0 / var(protocol.training_data[i,:]) for i in 1:size(protocol.training_data,1)]
     input_weights[input_weights .> 1.0E9] .= 0.0 # ignore nearly deterministic inputs

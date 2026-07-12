@@ -32,6 +32,7 @@ for swap_prob in all_swap_prob
 end
 
 for swap_prob in all_swap_prob
+    println("Begining linear_17_swap_prob=$swap_prob")
     @threads for latent_layers in 1:4
         training_data_path = base_dir * "/../sequence_data/linear_17_swap_prob=$swap_prob.h5"
         save_path = base_dir * "../trained_surrogates/sequence/linear_17_swap_prob=$swap_prob/latent_layers_$latent_layers/linear_17_swap_prob=$swap_prob.h5"
@@ -46,7 +47,7 @@ for swap_prob in all_swap_prob
             latent_dim = 2,
             latent_layers = latent_layers,
             batchsize = 256,
-            epochs = 2500, 
+            epochs = 7500, 
             β = [0.1],
             optimiser = Adam(;eta = 1.0E-4, beta = (0.9,0.999))
         )
@@ -54,6 +55,7 @@ for swap_prob in all_swap_prob
         save(save_path, surrogate)
         save_log_to_csv(training_log_save_path, training_log)
     end
+    println("Finished linear_17_swap_prob=$swap_prob")
 end
 
 for swap_prob in all_swap_prob
