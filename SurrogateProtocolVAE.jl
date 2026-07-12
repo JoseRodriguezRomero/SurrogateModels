@@ -41,10 +41,10 @@ $FIELDS
     latent_dim::Int = 1
     """Number of latent layers in the encoder and decoder chains of the VAE."""
     latent_layers::Int = 1
-    """Decoder chain of the VAE, responsible for generating time-series data from the latent representation."""
-    decoders::Vector{Chain}
     """Encoder chain of the VAE, responsible for encoding time-series data into a latent representation."""
-    encoders::Vector{Chain}
+    encoders::Tuple{Chain}
+    """Decoder chain of the VAE, responsible for generating time-series data from the latent representation."""
+    decoders::Tuple{Chain}
     """Weighting factor for the KL divergence term in the VAE loss function."""
     β::Union{Float64,Vector{Float64}} = 1.0
     """Number of training epochs for the VAE."""
@@ -66,15 +66,6 @@ struct VariationalAutoencoder
     decoders::Tuple
     β::Float64
     device::Flux.MLDataDevices.AbstractDevice
-end
-
-function VariationalAutoencoder(encoders::Vector, decoders::Vector, β::Float64, device::Flux.MLDataDevices.AbstractDevice)
-    return VariationalAutoencoder(
-        Tuple(encoders),
-        Tuple(decoders),
-        β,
-        device
-    )
 end
 
 Functors.@functor VariationalAutoencoder (encoders, decoders)
