@@ -69,6 +69,11 @@ struct VariationalAutoencoder
     device::Flux.MLDataDevices.AbstractDevice
 end
 
+struct VAETrainingLog
+    loss::Vector{Float64}
+    loss_grad_norm::Vector{Float64}
+end
+
 Functors.@functor VariationalAutoencoder (encoders, decoders)
 
 function sample_latent(μ, σ)
@@ -136,11 +141,6 @@ function vae_loss(model::VariationalAutoencoder, input_weights, x)
     kl_loss = 0.5f0 .* sum(logσ²_dec .- logσ²_enc .+ (σ_enc.^2 .+ (μ_enc .- μ_dec).^2) ./ σ_dec.^2 .- 1.0f0)
 
     return (recon_loss + model.β * kl_loss) / batch_size
-end
-
-struct VAETrainingLog
-    loss::Vector{Float64}
-    loss_grad_norm::Vector{Float64}
 end
 
 function _train!(protocol::SurrogateProtocolVAE, β::Number; print_log::Bool = true)
@@ -265,7 +265,7 @@ function encode(protocol::SurrogateProtocolVAE, x)
 end
 
 function (protocol::SurrogateProtocolVAE)(n_samples::Int)
-    window_size = size(protocol.training_data)[1]
+    window_size = size(protocol.training_data,1)
     sim_log = zeros(Float64,n_samples,window_size)
 
     for i in 1:n_samples
