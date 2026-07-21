@@ -1,10 +1,11 @@
 using ConcurrentSim, Plots, KernelDensity, Distributions, Measures
-using CSV, DataFrames
 using LaTeXStrings
 
-include("../SurrogateProtocolVAE.jl")
+using QuantumSavory
+using QuantumSavory.ProtocolZoo
 
-using .SurrogateProtocolVAE
+using FileIO, HDF5, CSV, DataFrames
+using GenerativeModelProtocols
 
 function compare_kde_plot(vae_sim::Vector, ground_truth::Vector)
     vae_kde = kde(vae_sim)
@@ -49,7 +50,7 @@ function compare_2d_kde_plot(Δt::Vector, obs::Vector, plot_title::String)
     return plt
 end
 
-function compare_latent_variables(protocol::SurrogateProtocolVAE.SurrogateProtocolVAE)
+function compare_latent_variables(protocol::GenerativeModelProtocol)
     function kde_interpolant(data::Vector)
         vae_kde = kde(data)
         vae_kde = InterpKDE(vae_kde)
@@ -79,7 +80,7 @@ function compare_latent_variables(protocol::SurrogateProtocolVAE.SurrogateProtoc
         return plot!(x, reference_gaussian.(x,0,1), style=:dash, label=L"\mathcal{N} (0,1)", linewidth=5)
     end
 
-    z = SurrogateProtocolVAE.encode(protocol, protocol.training_data)
+    z = GenerativeModelProtocols.encode(protocol.model, protocol.training_data)
 
     p = plot_kde_interpolant(z[1,:], "z₁")
     plot_kde_interpolant!(z[2,:], "z₂")
@@ -99,31 +100,54 @@ function plot_train_loss(file_name::String)
     return p
 end
 
-base_dir = @__DIR__() * "/"
+function read_data(file_path::String)
+    sim_log = EntanglementConsumerLog(file_path)
+    training_data = hcat(
+        sim_log.simulation_log.time, 
+        sim_log.simulation_log.state[1,:], 
+        sim_log.simulation_log.state[2,:]
+    )
+    training_data = hcat(
+        reshape(diff(training_data[:,1]), :, 1),
+        training_data[2:end,2:end]
+    )
+
+    return collect(transpose(training_data))
+end
+
+function read_all_data(base_dir::String)
+    files = filter(f -> endswith(f, ".h5"), readdir(base_dir))
+    training_data = zeros(Float64,3,0)
+
+    for file in files
+        training_data = hcat(training_data, read_data(base_dir * file))
+    end
+
+    return training_data
+end
+
+base_dir = @__DIR__() * "/../../qsavory_data/reference_data/"
 
 for fidelity in [0.75, 0.95]
-    for num_latent_layers = 1:4
-        save_dir = base_dir * "../trained_surrogates/quantum_savory/F_$fidelity/latent_layers_$num_latent_layers/"
+    for num_latent_layers in 1:4
+        save_dir = @__DIR__() * "/../../qsavory_data/trained_surrogates/variational_autoencoder/latent_layers_$num_latent_layers/F_$fidelity/"
 
-        sim = Simulation()
-        surrogate = SurrogateProtocolVAE.SurrogateProtocolVAE(sim;
-            training_data_path = base_dir * "../saved_data/F_$fidelity/",
-            saved_model = save_dir * "F_$fidelity.h5"
-        )
+        model = GenerativeModelProtocols.VariationalAutoencoder(save_dir * "F_$fidelity.h5")
+        training_data = read_all_data(@__DIR__() * "/../../qsavory_data/reference_data/F_$fidelity/")
+        surrogate = GenerativeModelProtocol(model,training_data)
 
         num_vae_samples = 125000
         @time sim_data = surrogate(num_vae_samples)
 
-        simulation_window = surrogate.simulation_window_size
-        p1_range = (0*simulation_window+1):(1*simulation_window)
-        p2_range = (2*simulation_window+1):(3*simulation_window)
+        display(size(training_data))
+        display(size(sim_data))
 
-        p1 = compare_kde_plot(sim_data[:,p1_range][:], surrogate.training_data[p1_range,:][:])
+        p1 = compare_kde_plot(sim_data[:,1], surrogate.training_data[1,:])
         plot!(p1, ylabel="Probability\nDensity")
         plot!(p1, xlabel="Time to serve [s]")
         plot!(xlims=[-1,15])
 
-        p2 = compare_kde_plot(sim_data[:,p2_range][:], surrogate.training_data[p2_range,:][:])
+        p2 = compare_kde_plot(sim_data[:,3], surrogate.training_data[3,:])
         plot!(p2, ylabel="Probability\nDensity")
         plot!(p2, xlabel="<X⊗X>")
         plot!(p2, legend=false)
@@ -133,8 +157,8 @@ for fidelity in [0.75, 0.95]
         savefig(p, save_dir * "F_$fidelity.svg")
         savefig(p, save_dir * "F_$fidelity.pdf")
 
-        p1 = compare_2d_kde_plot(surrogate.training_data[p1_range,:][:], surrogate.training_data[p2_range,:][:], "2D KDE from QuantumSavory Data")
-        p2 = compare_2d_kde_plot(sim_data[:,p1_range][:], sim_data[:,p2_range][:], "2D KDE from VAE Surrogate")
+        p1 = compare_2d_kde_plot(surrogate.training_data[1,:], surrogate.training_data[3,:], "2D KDE from QuantumSavory Data")
+        p2 = compare_2d_kde_plot(sim_data[:,1], sim_data[:,3], "2D KDE from VAE Surrogate")
 
         if fidelity == 0.75
             plot!(p1,xlims=(0,10),ylims=(0.01,0.06))

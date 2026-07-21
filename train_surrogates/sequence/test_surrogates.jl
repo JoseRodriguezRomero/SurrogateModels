@@ -1,9 +1,11 @@
 using ConcurrentSim, Plots, KernelDensity, Distributions, Measures
 using LaTeXStrings
 
-include("../SurrogateProtocolVAE.jl")
+using QuantumSavory
+using QuantumSavory.ProtocolZoo
 
-using .SurrogateProtocolVAE
+using FileIO, HDF5, CSV, DataFrames
+using GenerativeModelProtocols
 
 function compare_kde_plot(vae_sim::Vector, ground_truth::Vector)
     vae_kde = kde(vae_sim)
@@ -48,7 +50,7 @@ function compare_2d_kde_plot(Δt::Vector, obs::Vector, plot_title::String)
     return plt
 end
 
-function compare_latent_variables(protocol::SurrogateProtocolVAE.SurrogateProtocolVAE)
+function compare_latent_variables(protocol::GenerativeModelProtocol)
     function kde_interpolant(data::Vector)
         vae_kde = kde(data)
         vae_kde = InterpKDE(vae_kde)
@@ -78,7 +80,7 @@ function compare_latent_variables(protocol::SurrogateProtocolVAE.SurrogateProtoc
         return plot!(x, reference_gaussian.(x,0,1), style=:dash, label=L"\mathcal{N} (0,1)", linewidth=5)
     end
 
-    z = SurrogateProtocolVAE.encode(protocol, protocol.training_data)
+    z = GenerativeModelProtocols.encode(protocol.model, protocol.training_data)
 
     p = plot_kde_interpolant(z[1,:], "z₁")
     plot_kde_interpolant!(z[2,:], "z₂")
@@ -97,31 +99,26 @@ function plot_train_loss(file_name::String)
     return p
 end
 
-base_dir = @__DIR__() * "/"
+base_dir = @__DIR__() * "/../../sequence_data/reference_data/"
 
 for swap_prob in [0.8, 0.9]
     for num_latent_layers in 1:4
-        save_dir = base_dir * "../trained_surrogates/sequence/linear_17_swap_prob=$swap_prob/latent_layers_$num_latent_layers/"
-
-        sim = Simulation()
-        surrogate = SurrogateProtocolVAE.SurrogateProtocolVAE(sim;
-            single_shot = true,
-            training_data_path = base_dir *  "../sequence_data/linear_17_swap_prob=$swap_prob.h5", 
-            saved_model = save_dir * "linear_17_swap_prob=$swap_prob.h5"
-        )
+        save_dir = @__DIR__() * "/../../sequence_data/trained_surrogates/variational_autoencoder/latent_layers_$num_latent_layers/"
+        
+        model = GenerativeModelProtocols.VariationalAutoencoder(save_dir * "linear_17_swap_prob=$swap_prob.h5")
+        sim_log = EntanglementConsumerLog(base_dir * "linear_17_swap_prob=$swap_prob.h5")
+        training_data = hcat(sim_log.simulation_log.time, sim_log.simulation_log.state[:])
+        training_data = collect(transpose(training_data))
+        surrogate = GenerativeModelProtocol(model,training_data)
 
         num_vae_samples = 125000
         @time sim_data = surrogate(num_vae_samples)
 
-        simulation_window = surrogate.simulation_window_size
-        p1_range = (0*simulation_window+1):(1*simulation_window)
-        p2_range = (1*simulation_window+1):(2*simulation_window)
-
-        p1 = compare_kde_plot(sim_data[:,p1_range][:], surrogate.training_data[p1_range,:][:])
+        p1 = compare_kde_plot(sim_data[:,1][:], surrogate.training_data[1,:][:])
         plot!(p1, ylabel="Probability\nDensity")
         plot!(p1, xlabel="Time to serve [ms]")
 
-        p2 = compare_kde_plot(sim_data[:,p2_range][:], surrogate.training_data[p2_range,:][:])
+        p2 = compare_kde_plot(sim_data[:,2][:], surrogate.training_data[2,:][:])
         plot!(p2, ylabel="Probability\nDensity")
         plot!(p2, xlabel="Fidelity")
         plot!(p2, legend=false)
@@ -131,8 +128,8 @@ for swap_prob in [0.8, 0.9]
         savefig(p, save_dir * "linear_17_swap_prob=$swap_prob.pdf")
         savefig(p, save_dir * "linear_17_swap_prob=$swap_prob.svg")
 
-        p1 = compare_2d_kde_plot(surrogate.training_data[p1_range,:][:], surrogate.training_data[p2_range,:][:], "2D KDE from SeQUeNCe Data")
-        p2 = compare_2d_kde_plot(sim_data[:,p1_range][:], sim_data[:,p2_range][:], "2D KDE from VAE Surrogate")
+        p1 = compare_2d_kde_plot(surrogate.training_data[1,:][:], surrogate.training_data[2,:][:], "2D KDE from SeQUeNCe Data")
+        p2 = compare_2d_kde_plot(sim_data[:,1][:], sim_data[:,2][:], "2D KDE from VAE Surrogate")
 
         plot!(p1,xlims=(12,80),ylims=(0.43,0.48))
         plot!(p2,xlims=(12,80),ylims=(0.43,0.48))
@@ -151,7 +148,49 @@ for swap_prob in [0.8, 0.9]
         savefig(p, save_dir * "ELBO_training.png")
         savefig(p, save_dir * "ELBO_training.pdf")
         savefig(p, save_dir * "ELBO_training.svg")
-
     end
+end
+
+for swap_prob in [0.8, 0.9]
+    save_dir = @__DIR__() * "/../../sequence_data/trained_surrogates/diffusion_model/"
+    
+    model = GenerativeModelProtocols.DiffusionModel(save_dir * "linear_17_swap_prob=$swap_prob.h5")
+    sim_log = EntanglementConsumerLog(base_dir * "linear_17_swap_prob=$swap_prob.h5")
+    training_data = hcat(sim_log.simulation_log.time, sim_log.simulation_log.state[:])
+    training_data = collect(transpose(training_data))
+    surrogate = GenerativeModelProtocol(model,training_data)
+
+    num_vae_samples = 125000
+    @time sim_data = surrogate(num_vae_samples)
+
+    p1 = compare_kde_plot(sim_data[:,1][:], surrogate.training_data[1,:][:])
+    plot!(p1, ylabel="Probability\nDensity")
+    plot!(p1, xlabel="Time to serve [ms]")
+
+    p2 = compare_kde_plot(sim_data[:,2][:], surrogate.training_data[2,:][:])
+    plot!(p2, ylabel="Probability\nDensity")
+    plot!(p2, xlabel="Fidelity")
+    plot!(p2, legend=false)
+
+    p = plot(p1,p2,layout=(2,1))
+    savefig(p, save_dir * "linear_17_swap_prob=$swap_prob.png")
+    savefig(p, save_dir * "linear_17_swap_prob=$swap_prob.pdf")
+    savefig(p, save_dir * "linear_17_swap_prob=$swap_prob.svg")
+
+    p1 = compare_2d_kde_plot(surrogate.training_data[1,:][:], surrogate.training_data[2,:][:], "2D KDE from SeQUeNCe Data")
+    p2 = compare_2d_kde_plot(sim_data[:,1][:], sim_data[:,2][:], "2D KDE from VAE Surrogate")
+
+    # plot!(p1,xlims=(12,80),ylims=(0.43,0.48))
+    # plot!(p2,xlims=(12,80),ylims=(0.43,0.48))
+
+    p = plot(p1,p2,layout=(2,1), right_margin = 5mm)
+    savefig(p, save_dir * "2d_kde_linear_17_swap_prob=$swap_prob.png")
+    savefig(p, save_dir * "2d_kde_linear_17_swap_prob=$swap_prob.pdf")
+    savefig(p, save_dir * "2d_kde_linear_17_swap_prob=$swap_prob.svg")
+
+    p = plot_train_loss(save_dir * "linear_17_swap_prob=$swap_prob.csv")
+    savefig(p, save_dir * "ELBO_training.png")
+    savefig(p, save_dir * "ELBO_training.pdf")
+    savefig(p, save_dir * "ELBO_training.svg")
 end
 
