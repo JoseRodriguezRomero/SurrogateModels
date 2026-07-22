@@ -60,11 +60,16 @@ function train_all_surrogates(model::GenerativeModelProtocols.AbstractGenerative
 
         surrogate = GenerativeModelProtocol(deepcopy(model), training_data;
             batchsize = 8192,
-            epochs = 10,
+            epochs = 500,
             optimiser = Adam(; eta = 1.0E-3, beta = (0.95,0.999)),
             device = device
         )
+
+        t₀ = time()
         training_log = train!(surrogate)
+        t₁ = time()
+        println("Training took: $(t₁ - t₀) seconds")
+
         save(save_path, surrogate)
         save_log_to_csv(training_log_save_path, training_log)
 
@@ -93,7 +98,7 @@ end
 
 function train_all_surrogates()
     train_all_vae_surrogates()
-    train_all_dm_surrogates()
+    # train_all_dm_surrogates()
 end
 
 train_all_surrogates()

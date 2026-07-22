@@ -39,11 +39,16 @@ function train_all_surrogates(model::GenerativeModelProtocols.AbstractGenerative
 
         surrogate = GenerativeModelProtocol(deepcopy(model), training_data;
             batchsize = 2048,
-            epochs = 7500,
+            epochs = 1500,
             optimiser = Adam(; eta = 1.0E-3, beta = (0.95,0.999)),
             device = device
         )
+
+        t₀ = time()
         training_log = train!(surrogate)
+        t₁ = time()
+        println("Training took: $(t₁ - t₀) seconds")
+
         save(save_path, surrogate)
         save_log_to_csv(training_log_save_path, training_log)
 
@@ -57,8 +62,8 @@ function train_all_surrogates(model::GenerativeModelProtocols.AbstractGenerative
 end
 
 function train_all_vae_surrogates()
-    for latent_layers in 3:4
-        model = GenerativeModelProtocols.VariationalAutoencoder(2, 2, latent_layers; β = [0.1])
+    for latent_layers in 1:4
+        model = GenerativeModelProtocols.VariationalAutoencoder(2, 2, latent_layers; β = [0.2])
         base_dir = @__DIR__() * "/../../sequence_data/trained_surrogates/variational_autoencoder/latent_layers_$latent_layers"
         train_all_surrogates(model, base_dir)
     end

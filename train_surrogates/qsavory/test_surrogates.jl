@@ -139,9 +139,6 @@ for fidelity in [0.75, 0.95]
         num_vae_samples = 125000
         @time sim_data = surrogate(num_vae_samples)
 
-        display(size(training_data))
-        display(size(sim_data))
-
         p1 = compare_kde_plot(sim_data[:,1], surrogate.training_data[1,:])
         plot!(p1, ylabel="Probability\nDensity")
         plot!(p1, xlabel="Time to serve [s]")

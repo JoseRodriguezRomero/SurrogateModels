@@ -8,7 +8,7 @@ using FileIO, HDF5, CSV, DataFrames
 using GenerativeModelProtocols
 
 function compare_kde_plot(vae_sim::Vector, ground_truth::Vector)
-    vae_kde = kde(vae_sim)
+    vae_kde = kde(filter(!isnan, vae_sim))
     vae_kde = InterpKDE(vae_kde)
     vae_kde_pdf(x) = pdf(vae_kde,x)
 
@@ -145,9 +145,9 @@ for swap_prob in [0.8, 0.9]
         savefig(p, save_dir * "latent_comp_linear_17_swap_prob=$swap_prob.svg")
 
         p = plot_train_loss(save_dir * "linear_17_swap_prob=$swap_prob.csv")
-        savefig(p, save_dir * "ELBO_training.png")
-        savefig(p, save_dir * "ELBO_training.pdf")
-        savefig(p, save_dir * "ELBO_training.svg")
+        savefig(p, save_dir * "ELBO_training_swap_prob=$swap_prob.png")
+        savefig(p, save_dir * "ELBO_training_swap_prob=$swap_prob.pdf")
+        savefig(p, save_dir * "ELBO_training_swap_prob=$swap_prob.svg")
     end
 end
 
@@ -189,8 +189,8 @@ for swap_prob in [0.8, 0.9]
     savefig(p, save_dir * "2d_kde_linear_17_swap_prob=$swap_prob.svg")
 
     p = plot_train_loss(save_dir * "linear_17_swap_prob=$swap_prob.csv")
-    savefig(p, save_dir * "ELBO_training.png")
-    savefig(p, save_dir * "ELBO_training.pdf")
-    savefig(p, save_dir * "ELBO_training.svg")
+    savefig(p, save_dir * "ELBO_training_swap_prob=$swap_prob.png")
+    savefig(p, save_dir * "ELBO_training_swap_prob=$swap_prob.pdf")
+    savefig(p, save_dir * "ELBO_training_swap_prob=$swap_prob.svg")
 end
 
