@@ -1,24 +1,13 @@
-using ConcurrentSim, Flux, FileIO
-using DataFrames, CSV, HDF5
+using Lux, Optimisers
+using FileIO, HDF5
 
 using GenerativeModelProtocols
 
 using QuantumSavory
 using QuantumSavory.ProtocolZoo
 
-device = cpu_device()
-
-try
-    using CUDA, cuDNN
-    global device = gpu_device()
-catch
-    println("No CUDA support detected! Using CPU as compute device.")
-end
-
-function save_log_to_csv(file_name, training_log)
-    df = DataFrame(:loss => training_log.loss, :grad_norm => training_log.loss_grad_norm)
-    CSV.write(file_name, df)
-end
+using StatsBase
+using Reactant
 
 base_dir = @__DIR__()
 
@@ -48,7 +37,8 @@ function read_all_data(base_dir::String)
     return training_data
 end
 
-function train_all_surrogates(model::GenerativeModelProtocols.AbstractGenerativeModel, base_dir::String)
+function train_all_surrogates(model::GenerativeModelProtocols.AbstractGenerativeModel, base_dir::String; 
+    optimiser = Adam(; eta = 1.0E-4, beta = (0.95,0.999)), kwargs...)
     for fidelity in [0.75, 0.95]
         if !ispath(base_dir * "/F_$fidelity")
             mkpath(base_dir * "/F_$fidelity")
@@ -56,49 +46,68 @@ function train_all_surrogates(model::GenerativeModelProtocols.AbstractGenerative
 
         training_data = read_all_data(@__DIR__() * "/../../qsavory_data/reference_data/F_$fidelity/")
         save_path = base_dir * "/F_$fidelity/F_$fidelity.h5"
-        training_log_save_path = base_dir * "/F_$fidelity/F_$fidelity.csv"
+        training_data = training_data[[1, 3], :]
 
-        surrogate = GenerativeModelProtocol(deepcopy(model), training_data;
-            batchsize = 8192,
-            epochs = 500,
-            optimiser = Adam(; eta = 1.0E-3, beta = (0.95,0.999)),
-            device = device
+        surrogate = GenerativeModelProtocol(deepcopy(model), training_data)
+
+        train!(surrogate; 
+            batchsize = 2048,
+            epochs    = 3500,
+            optimiser = optimiser,
+            device    = reactant_device(),
+            kwargs...
         )
 
-        t₀ = time()
-        training_log = train!(surrogate)
-        t₁ = time()
-        println("Training took: $(t₁ - t₀) seconds")
-
         save(save_path, surrogate)
-        save_log_to_csv(training_log_save_path, training_log)
-
-        try
-            for _ in 1:5
-                CUDA.reclaim()
-            end
-        catch
-        end
     end
 end
 
 function train_all_vae_surrogates()
     for latent_layers in 1:4
-        model = GenerativeModelProtocols.VariationalAutoencoder(3, 3, latent_layers; β = [0.1])
+        model = GenerativeModelProtocols.VariationalAutoencoder(2, 2, latent_layers)
         base_dir = @__DIR__() * "/../../qsavory_data/trained_surrogates/variational_autoencoder/latent_layers_$latent_layers"
-        train_all_surrogates(model, base_dir)
+        train_all_surrogates(model, base_dir; β = 0.1)
     end
 end
 
 function train_all_dm_surrogates()
-    model = GenerativeModelProtocols.DiffusionModel(3)
+    model = GenerativeModelProtocols.DiffusionModel(2, 300)
     base_dir = @__DIR__() * "/../../qsavory_data/trained_surrogates/diffusion_model"
     train_all_surrogates(model, base_dir)
 end
 
+function train_all_gmm_surrogates()
+    model = GenerativeModelProtocols.GaussianMixtureModel(2, 300)
+    base_dir = @__DIR__() * "/../../qsavory_data/trained_surrogates/gaussian_mixture_model"
+    train_all_surrogates(model, base_dir)
+end
+
+function train_all_gan_surrogates()
+    critic_optimiser = Adam(; eta = 1.0E-4, beta = (0.0,0.9))
+    vae_optimiser = Adam(; eta = 1.0E-4, beta = (0.95,0.999))
+
+    model = GenerativeModelProtocols.GenerativeAdversarialNetwork(2, 2)
+    base_dir = @__DIR__() * "/../../qsavory_data/trained_surrogates/generative_adversarial_network"
+    train_all_surrogates(model, base_dir;
+        optimiser = (critic_optimiser, vae_optimiser),
+        β = 0.1, γ_vae = 1.0, γ_wgan = 0.1,
+        grad_penalty = true, λ = 10.0, a = 1.0,
+        weight_clipping = false, clip_value = 0.1
+    )
+end
+
+function train_all_nf_surrogates()
+    model = GenerativeModelProtocols.NormalizingFlow(2)
+    base_dir = @__DIR__() * "/../../qsavory_data/trained_surrogates/normalizing_flow"
+    train_all_surrogates(model, base_dir)
+end
+
 function train_all_surrogates()
-    train_all_vae_surrogates()
+    # train_all_vae_surrogates()
     # train_all_dm_surrogates()
+    # train_all_gmm_surrogates()
+    # train_all_gan_surrogates()
+    train_all_nf_surrogates()
 end
 
 train_all_surrogates()
