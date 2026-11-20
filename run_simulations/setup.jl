@@ -98,10 +98,10 @@ const YY = Y⊗Y
         if !success
             network[nodea,:enttrackers][pair1qa] = nothing
             network[nodeb,:enttrackers][pair1qb] = nothing
-            @simlog sim "failed purification at $(nodea):$(pair1qa)&$(pair2qa) and $(nodeb):$(pair1qb)&$(pair2qb)"
+            @info sim "failed purification at $(nodea):$(pair1qa)&$(pair2qa) and $(nodeb):$(pair1qb)&$(pair2qb)"
         else
             round += 1
-            @simlog sim "purification at $(nodea):$(pair1qa) $(nodeb):$(pair1qb) by sacrifice of $(nodea):$(pair1qa) $(nodeb):$(pair1qb)"
+            @info sim "purification at $(nodea):$(pair1qa) $(nodeb):$(pair1qb) by sacrifice of $(nodea):$(pair1qa) $(nodeb):$(pair1qb)"
         end
         network[nodea,:enttrackers][pair2qa] = nothing
         network[nodeb,:enttrackers][pair2qb] = nothing
